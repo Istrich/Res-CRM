@@ -9,6 +9,7 @@ from datetime import date, datetime
 from typing import Any
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 
 # Точные и варианты написания заголовков (нижний регистр)
@@ -16,6 +17,7 @@ HEADER_MAP = {
     "фамилия": "last_name",
     "имя": "first_name",
     "отчество": "middle_name",
+    "фио": "fio",
     "специализация": "specialization",
     "должность": "title",
     "подразделение": "department",
@@ -29,6 +31,7 @@ HEADER_ALIASES = [
     ("last_name", ("фамилия", "family", "last")),
     ("first_name", ("имя", "name", "first")),
     ("middle_name", ("отчество", "patronymic", "middle")),
+    ("fio", ("фио", "ф.и.о", "fio", "полное имя")),
     ("title", ("должность", "position", "title")),
     ("specialization", ("специализация", "specialization", "спец")),
     ("department", ("подразделение", "department", "отдел")),
@@ -77,17 +80,60 @@ def _normalize_header(h: Any) -> str:
     return s
 
 
-def _match_header_cell(cell_value: str) -> str | None:
-    """Возвращает ключ поля (last_name, title, ...) по ячейке заголовка или None."""
+def _match_header_cell(cell_value: str, exact_only: bool = False) -> str | None:
+    """
+    Возвращает ключ поля по ячейке заголовка.
+    exact_only: только точное совпадение с HEADER_MAP (чтобы «Должность» не перебивалась «Код должности»).
+    """
     cell_value = _normalize_header(cell_value)
     if not cell_value:
         return None
     if cell_value in HEADER_MAP:
         return HEADER_MAP[cell_value]
+    if exact_only:
+        return None
     for key, aliases in HEADER_ALIASES:
         for alias in aliases:
             if alias in cell_value or cell_value in alias:
                 return key
+    return None
+
+
+def _fill_fio_from_column(row_dict: dict[str, Any]) -> None:
+    """
+    Если в строке есть значение в колонке ФИО (fio), разбираем его на фамилию, имя, отчество
+    и заполняем пустые поля. Формат: «Фамилия Имя Отчество» (пробелы).
+    """
+    fio_val = row_dict.get("fio")
+    if not fio_val or not isinstance(fio_val, str):
+        return
+    parts = [p.strip() for p in fio_val.strip().split() if p.strip()]
+    if not parts:
+        return
+    if not row_dict.get("last_name") and len(parts) >= 1:
+        row_dict["last_name"] = parts[0]
+    if not row_dict.get("first_name") and len(parts) >= 2:
+        row_dict["first_name"] = parts[1]
+    if not row_dict.get("middle_name") and len(parts) >= 3:
+        row_dict["middle_name"] = " ".join(parts[2:])
+
+
+def _cell_value(ws: Any, row: int, col: int) -> Any:
+    """
+    Возвращает значение ячейки. Для объединённых ячеек openpyxl даёт значение
+    только в верхней левой; для остальных возвращает None — подставляем значение
+    из верхней ячейки объединённого диапазона.
+    """
+    val = ws.cell(row=row, column=col).value
+    if val is not None:
+        return val
+    merged = getattr(ws, "merged_cells", None)
+    if not merged:
+        return None
+    coord = f"{get_column_letter(col)}{row}"
+    for merged_range in getattr(merged, "ranges", []):
+        if coord in merged_range:
+            return ws.cell(row=merged_range.min_row, column=merged_range.min_col).value
     return None
 
 
@@ -102,14 +148,20 @@ def parse_employee_excel(file_content: bytes) -> list[dict[str, Any]]:
     if ws is None:
         return []
 
-    # Не полагаемся на max_column/max_row — у некоторых файлов они 0 или неверные
+    # Сначала точные совпадения (чтобы «Должность» не забирала колонка «Код должности» и т.п.)
     max_col_to_try = max((ws.max_column or 0), 20)
     header_to_col: dict[str, int] = {}
     for c in range(1, max_col_to_try + 1):
         h = ws.cell(row=1, column=c).value
         if h is None and c > (ws.max_column or 0) and not header_to_col:
             break
-        key = _match_header_cell(h)
+        key = _match_header_cell(h, exact_only=True)
+        if key and key not in header_to_col:
+            header_to_col[key] = c
+    # Затем частичные (для вариантов вроде «Дата приема», «Отдел»)
+    for c in range(1, max_col_to_try + 1):
+        h = ws.cell(row=1, column=c).value
+        key = _match_header_cell(h, exact_only=False)
         if key and key not in header_to_col:
             header_to_col[key] = c
 
@@ -126,7 +178,7 @@ def parse_employee_excel(file_content: bytes) -> list[dict[str, Any]]:
     if not header_to_col:
         return []
 
-    # Читаем строки данных: при неверном max_row читаем до 1000 строк, останавливаемся на пустых
+    # Читаем все строки до конца листа; не прерываемся на 2–3 пустых (иначе теряются блоки на «К» и последние строки)
     max_row_to_try = (ws.max_row or 0)
     if max_row_to_try < 2:
         max_row_to_try = 1000
@@ -134,22 +186,25 @@ def parse_employee_excel(file_content: bytes) -> list[dict[str, Any]]:
     rows = []
     title_col = header_to_col.get("title", 1)
     empty_title_streak = 0
+    STOP_AFTER_CONSECUTIVE_EMPTY = 30  # остановка только после 30 подряд пустых (реальный конец данных)
     for r in range(2, max_row_to_try + 1):
-        title_val = ws.cell(row=r, column=title_col).value
+        title_val = _cell_value(ws, r, title_col)
         title_empty = title_val is None or str(title_val).strip() == ""
         if title_empty:
             empty_title_streak += 1
-            if empty_title_streak >= 3 and r > 5:
+            if empty_title_streak >= STOP_AFTER_CONSECUTIVE_EMPTY and r > 50:
                 break
         else:
             empty_title_streak = 0
         row_dict = {}
         for key, col in header_to_col.items():
-            val = ws.cell(row=r, column=col).value
+            val = _cell_value(ws, r, col)
             if key in ("hire_date", "termination_date"):
                 row_dict[key] = _parse_date(val)
             else:
                 row_dict[key] = (str(val).strip() or None) if val is not None else None
+        # Если есть колонка ФИО — разбираем и заполняем фамилию/имя/отчество там, где пусто
+        _fill_fio_from_column(row_dict)
         rows.append(row_dict)
 
     return rows

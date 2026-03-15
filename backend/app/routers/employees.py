@@ -132,11 +132,22 @@ def list_employees(
     return [_build_list_item(e, year) for e in employees]
 
 
-def _create_employees_from_rows(rows: list, db: Session) -> tuple[int, int]:
-    """Create employees from list of dicts or EmployeeImportRow. Returns (created, skipped)."""
+def _preview_row(row: dict | object) -> str:
+    """Build short preview string for a row (for skipped list)."""
+    if hasattr(row, "title"):
+        parts = [getattr(row, "last_name", "") or "", getattr(row, "first_name", "") or "", getattr(row, "title", "") or ""]
+    else:
+        parts = [row.get("last_name") or "", row.get("first_name") or "", row.get("title") or ""]
+    s = " ".join((p or "").strip() for p in parts).strip()
+    return s or "—"
+
+
+def _create_employees_from_rows(rows: list, db: Session) -> tuple[int, int, list[dict]]:
+    """Create employees from list of dicts or EmployeeImportRow. Returns (created, skipped, skipped_rows)."""
     created = 0
     skipped = 0
-    for row in rows:
+    skipped_rows: list[dict] = []
+    for idx, row in enumerate(rows):
         if hasattr(row, "title"):
             title = (row.title or "").strip()
             first_name = (row.first_name or "").strip() or None
@@ -159,6 +170,11 @@ def _create_employees_from_rows(rows: list, db: Session) -> tuple[int, int]:
             termination_date = row.get("termination_date")
         if not title:
             skipped += 1
+            skipped_rows.append({
+                "row": idx + 1,
+                "reason": "нет должности",
+                "preview": _preview_row(row),
+            })
             continue
         emp = Employee(
             is_position=False,
@@ -174,7 +190,7 @@ def _create_employees_from_rows(rows: list, db: Session) -> tuple[int, int]:
         )
         db.add(emp)
         created += 1
-    return created, skipped
+    return created, skipped, skipped_rows
 
 
 @router.post("/import")
@@ -184,9 +200,9 @@ def import_employees(
     _: User = Depends(get_current_user),
 ):
     """Bulk create employees from import rows. Rows with empty title are skipped."""
-    created, skipped = _create_employees_from_rows(body, db)
+    created, skipped, skipped_rows = _create_employees_from_rows(body, db)
     db.commit()
-    return {"created": created, "skipped": skipped}
+    return {"created": created, "skipped": skipped, "skipped_rows": skipped_rows}
 
 
 @router.post("/import/excel")
@@ -204,10 +220,10 @@ async def import_employees_excel(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Ошибка чтения Excel: {e!s}") from e
     if not rows:
-        return {"created": 0, "skipped": 0}
-    created, skipped = _create_employees_from_rows(rows, db)
+        return {"created": 0, "skipped": 0, "skipped_rows": []}
+    created, skipped, skipped_rows = _create_employees_from_rows(rows, db)
     db.commit()
-    return {"created": created, "skipped": skipped}
+    return {"created": created, "skipped": skipped, "skipped_rows": skipped_rows}
 
 
 @router.post("", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)

@@ -73,7 +73,7 @@ function formatApiError(detail) {
   return String(detail)
 }
 
-function ImportModal({ paste, setPaste, parsed, setParsed, error, setError, successMessage, onImport, onImportExcel, onClose, loading, loadingExcel }) {
+function ImportModal({ paste, setPaste, parsed, setParsed, error, setError, successMessage, skippedRows, onImport, onImportExcel, onClose, loading, loadingExcel }) {
   const fileInputRef = useRef(null)
   const handleParse = () => {
     const { rows, error: err } = parseImportTable(paste)
@@ -109,8 +109,22 @@ function ImportModal({ paste, setPaste, parsed, setParsed, error, setError, succ
       }
     >
       {successMessage && (
-        <div className="alert alert-success" style={{ marginBottom: 16 }}>
-          {successMessage}
+        <div style={{ marginBottom: 16 }}>
+          <div className="alert alert-success" style={{ marginBottom: skippedRows?.length ? 12 : 0 }}>
+            {successMessage}
+          </div>
+          {skippedRows?.length > 0 && (
+            <div className="alert" style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+              <div className="fw-600" style={{ marginBottom: 8 }}>Пропущенные строки:</div>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13 }}>
+                {skippedRows.map((r, i) => (
+                  <li key={i}>
+                    Строка {r.row}: {r.reason} — {r.preview || '—'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
       {error && (
@@ -192,6 +206,7 @@ export default function EmployeesPage() {
   const [filterSpec, setFilterSpec] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [importModal, setImportModal] = useState(false)
+  const [importSkippedRows, setImportSkippedRows] = useState([])
   const [importPaste, setImportPaste] = useState('')
   const [importParsed, setImportParsed] = useState(null)
   const [importError, setImportError] = useState('')
@@ -252,6 +267,7 @@ export default function EmployeesPage() {
       setImportError('')
       const created = res?.created ?? 0
       const skipped = res?.skipped ?? 0
+      setImportSkippedRows(res?.skipped_rows ?? [])
       setImportSuccessMessage(`Импортировано: ${created} записей. Пропущено (пустая должность): ${skipped}.`)
     },
     onError: (e) => {
@@ -267,6 +283,7 @@ export default function EmployeesPage() {
       setImportError('')
       const created = res?.created ?? 0
       const skipped = res?.skipped ?? 0
+      setImportSkippedRows(res?.skipped_rows ?? [])
       setImportSuccessMessage(`Импорт из Excel: создано ${created} записей, пропущено ${skipped}.`)
     },
     onError: (e) => {
@@ -281,6 +298,7 @@ export default function EmployeesPage() {
     setImportParsed(null)
     setImportError('')
     setImportSuccessMessage(null)
+    setImportSkippedRows([])
   }
 
   const handleExport = async () => {
@@ -404,6 +422,7 @@ export default function EmployeesPage() {
           error={importError}
           setError={setImportError}
           successMessage={importSuccessMessage}
+          skippedRows={importSkippedRows}
           onImport={() => importMut.mutate(importParsed)}
           onImportExcel={(file) => importExcelMut.mutate(file)}
           onClose={closeImportModal}
