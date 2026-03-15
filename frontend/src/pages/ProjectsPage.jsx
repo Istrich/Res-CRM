@@ -30,12 +30,13 @@ export default function ProjectsPage() {
 
   const createMut = useMutation({
     mutationFn: createProject,
-    onSuccess: () => { qc.invalidateQueries(['projects']); setShowModal(false); setForm({ name: '', budget_project_id: '' }) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); setShowModal(false); setForm({ name: '', budget_project_id: '' }) },
   })
 
   const deleteMut = useMutation({
     mutationFn: deleteProject,
-    onSuccess: () => { qc.invalidateQueries(['projects']); setDeleteTarget(null) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); setDeleteTarget(null) },
+    onError: (e) => { alert(e.response?.data?.detail || 'Не удалось удалить проект') },
   })
 
   return (
@@ -45,7 +46,7 @@ export default function ProjectsPage() {
           <div className="page-title">Проекты</div>
           <div className="page-subtitle">{projects.length} проектов</div>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Создать проект</button>
+        <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>+ Создать проект</button>
       </div>
 
       <div className="toolbar">
@@ -91,7 +92,7 @@ export default function ProjectsPage() {
                   </span>
                 </td>
                 <td className="td">
-                  <button className="btn btn-ghost btn-sm btn-icon" onClick={e => { e.stopPropagation(); setDeleteTarget(p) }}>🗑</button>
+                  <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={e => { e.stopPropagation(); setDeleteTarget(p) }}>🗑</button>
                 </td>
               </tr>
             ))}
@@ -105,8 +106,8 @@ export default function ProjectsPage() {
           onClose={() => setShowModal(false)}
           footer={
             <>
-              <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Отмена</button>
-              <button className="btn btn-primary" onClick={() => createMut.mutate({ ...form, budget_project_id: form.budget_project_id || null })} disabled={!form.name || createMut.isPending}>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Отмена</button>
+              <button type="button" className="btn btn-primary" onClick={() => createMut.mutate({ ...form, budget_project_id: form.budget_project_id || null })} disabled={!form.name || createMut.isPending}>
                 {createMut.isPending ? <span className="spinner" /> : 'Создать'}
               </button>
             </>

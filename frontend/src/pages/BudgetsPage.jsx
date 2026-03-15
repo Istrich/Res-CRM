@@ -63,10 +63,11 @@ export default function BudgetsPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => handleExport('projects')}>⬇ Проекты</button>
-          <button className="btn btn-secondary btn-sm" onClick={() => handleExport('budget_projects')}>⬇ Бюджетные</button>
-          <button className="btn btn-secondary btn-sm" onClick={() => handleExport('payroll')}>⬇ ФОТ</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleExport('projects')}>⬇ Проекты</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleExport('budget_projects')}>⬇ Бюджетные</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleExport('payroll')}>⬇ ФОТ</button>
           <button
+            type="button"
             className="btn btn-primary"
             onClick={() => recalcMut.mutate()}
             disabled={recalcMut.isPending}

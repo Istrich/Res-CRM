@@ -68,8 +68,8 @@ export default function BudgetProjectsPage() {
           <div className="page-subtitle">{bps.length} проектов · год {year}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary btn-sm" onClick={handleExport}>⬇ Excel</button>
-          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>+ Создать</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={handleExport}>⬇ Excel</button>
+          <button type="button" className="btn btn-primary" onClick={() => setShowCreate(true)}>+ Создать</button>
         </div>
       </div>
 
@@ -98,7 +98,7 @@ export default function BudgetProjectsPage() {
           <div className="empty-state">
             <span style={{ fontSize: 32 }}>💼</span>
             <span>Нет бюджетных проектов за {year} год</span>
-            <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>Создать первый</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>Создать первый</button>
           </div>
         ) : (
           <table>
@@ -143,7 +143,7 @@ export default function BudgetProjectsPage() {
                   </td>
                   <td className="td" style={{ textAlign: 'right' }}>{bp.projects_count}</td>
                   <td className="td" onClick={e => e.stopPropagation()}>
-                    <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setDeleteTarget(bp)}>🗑</button>
+                    <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={() => setDeleteTarget(bp)}>🗑</button>
                   </td>
                 </tr>
               ))}
@@ -158,8 +158,8 @@ export default function BudgetProjectsPage() {
           onClose={() => { setShowCreate(false); setFormErr('') }}
           footer={
             <>
-              <button className="btn btn-secondary" onClick={() => setShowCreate(false)}>Отмена</button>
-              <button className="btn btn-primary" onClick={handleCreate} disabled={createMut.isPending}>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)}>Отмена</button>
+              <button type="button" className="btn btn-primary" onClick={handleCreate} disabled={createMut.isPending}>
                 {createMut.isPending ? <span className="spinner" /> : 'Создать'}
               </button>
             </>
@@ -188,10 +188,10 @@ export default function BudgetProjectsPage() {
 
       {deleteTarget && (
         <Confirm
-          title="Удалить бюджетный проект"
           message={`Удалить «${deleteTarget.name}»? Проекты внутри останутся, но потеряют привязку к бюджету.`}
           onConfirm={() => deleteMut.mutate(deleteTarget.id)}
           onCancel={() => setDeleteTarget(null)}
+          loading={deleteMut.isPending}
         />
       )}
     </div>

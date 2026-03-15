@@ -82,6 +82,7 @@ export default function AssignmentManager({ employeeId, assignments = [], onRefr
                 <td className="td">{a.valid_to ? fmtDate(a.valid_to) : <span className="text-muted">—</span>}</td>
                 <td className="td">
                   <button
+                    type="button"
                     className="btn btn-danger btn-sm"
                     onClick={() => confirm('Убрать сотрудника из проекта?') && deleteMut.mutate(a.id)}
                   >
@@ -130,7 +131,7 @@ export default function AssignmentManager({ employeeId, assignments = [], onRefr
           </div>
         </form>
       ) : (
-        <button className="btn btn-secondary btn-sm" onClick={() => setAdding(true)}>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAdding(true)}>
           + Добавить проект
         </button>
       )}

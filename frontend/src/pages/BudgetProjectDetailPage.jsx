@@ -48,6 +48,7 @@ export default function BudgetProjectDetailPage() {
   const deleteMut = useMutation({
     mutationFn: () => deleteBudgetProject(id),
     onSuccess: () => navigate('/budget-projects'),
+    onError: (e) => { alert(e.response?.data?.detail || 'Не удалось удалить') },
   })
 
   if (bpLoading) return <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
@@ -59,12 +60,12 @@ export default function BudgetProjectDetailPage() {
     <div>
       {/* Nav */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/budget-projects')}>← Назад</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate('/budget-projects')}>← Назад</button>
         <div style={{ flex: 1 }} />
-        <button className="btn btn-secondary btn-sm" onClick={() => { setEditForm({ name: bp.name, year: bp.year, total_budget: bp.total_budget || '' }); setEditModal(true) }}>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setEditForm({ name: bp.name, year: bp.year, total_budget: bp.total_budget || '' }); setEditModal(true) }}>
           ✏ Редактировать
         </button>
-        <button className="btn btn-danger btn-sm" onClick={() => setDeleteConfirm(true)}>🗑</button>
+        <button type="button" className="btn btn-danger btn-sm" onClick={() => setDeleteConfirm(true)}>🗑</button>
       </div>
 
       {/* Header card */}
@@ -187,8 +188,9 @@ export default function BudgetProjectDetailPage() {
           onClose={() => setEditModal(false)}
           footer={
             <>
-              <button className="btn btn-secondary" onClick={() => setEditModal(false)}>Отмена</button>
+              <button type="button" className="btn btn-secondary" onClick={() => setEditModal(false)}>Отмена</button>
               <button
+                type="button"
                 className="btn btn-primary"
                 disabled={updateMut.isPending}
                 onClick={() => updateMut.mutate({
@@ -224,10 +226,10 @@ export default function BudgetProjectDetailPage() {
 
       {deleteConfirm && (
         <Confirm
-          title="Удалить бюджетный проект"
           message={`Удалить «${bp.name}»?`}
           onConfirm={() => deleteMut.mutate()}
           onCancel={() => setDeleteConfirm(false)}
+          loading={deleteMut.isPending}
         />
       )}
     </div>

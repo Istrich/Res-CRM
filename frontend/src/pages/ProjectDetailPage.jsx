@@ -57,6 +57,7 @@ export default function ProjectDetailPage() {
   const deleteMut = useMutation({
     mutationFn: () => deleteProject(id),
     onSuccess: () => navigate('/projects'),
+    onError: (e) => { alert(e.response?.data?.detail || 'Не удалось удалить проект') },
   })
 
   const removeMut = useMutation({
@@ -93,10 +94,10 @@ export default function ProjectDetailPage() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/projects')}>← Назад</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate('/projects')}>← Назад</button>
         <div style={{ flex: 1 }} />
-        <button className="btn btn-secondary" onClick={() => setEditModal(true)}>✏ Редактировать</button>
-        <button className="btn btn-danger btn-sm" onClick={() => setDeleteConfirm(true)}>🗑</button>
+        <button type="button" className="btn btn-secondary" onClick={() => setEditModal(true)}>✏ Редактировать</button>
+        <button type="button" className="btn btn-danger btn-sm" onClick={() => setDeleteConfirm(true)}>🗑</button>
       </div>
 
       {/* Header */}
@@ -164,7 +165,7 @@ export default function ProjectDetailPage() {
       <div className="card" style={{ padding: '16px 20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div className="fw-600">Участники ({members.length})</div>
-          <button className="btn btn-secondary btn-sm" onClick={() => setAddEmpModal(true)}>+ Добавить сотрудника</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAddEmpModal(true)}>+ Добавить сотрудника</button>
         </div>
         {members.length === 0
           ? <div className="text-muted text-small">Нет участников</div>
@@ -221,7 +222,7 @@ export default function ProjectDetailPage() {
                           <td className="td text-muted">{fmtDate(m.valid_from)}</td>
                           <td className="td text-muted">{m.valid_to ? fmtDate(m.valid_to) : 'по сей день'}</td>
                           <td className="td">
-                            <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setRemoveTarget(m)}>✕</button>
+                            <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={() => setRemoveTarget(m)}>✕</button>
                           </td>
                         </tr>
                       ))}
@@ -267,7 +268,7 @@ export default function ProjectDetailPage() {
                         <td className="td text-muted">{fmtDate(m.valid_from)}</td>
                         <td className="td text-muted">{m.valid_to ? fmtDate(m.valid_to) : 'по сей день'}</td>
                         <td className="td">
-                          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setRemoveTarget(m)}>✕</button>
+                          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={() => setRemoveTarget(m)}>✕</button>
                         </td>
                       </tr>
                     ))}
@@ -281,8 +282,8 @@ export default function ProjectDetailPage() {
         <Modal title="Редактировать проект" onClose={() => setEditModal(false)}
           footer={
             <>
-              <button className="btn btn-secondary" onClick={() => setEditModal(false)}>Отмена</button>
-              <button className="btn btn-primary" onClick={() => updateMut.mutate({ ...editForm, budget_project_id: editForm.budget_project_id || null })} disabled={updateMut.isPending}>
+              <button type="button" className="btn btn-secondary" onClick={() => setEditModal(false)}>Отмена</button>
+              <button type="button" className="btn btn-primary" onClick={() => updateMut.mutate({ ...editForm, budget_project_id: editForm.budget_project_id || null })} disabled={updateMut.isPending}>
                 {updateMut.isPending ? <span className="spinner" /> : 'Сохранить'}
               </button>
             </>
@@ -394,8 +395,8 @@ function AddEmployeeModal({ projectId, onClose, onDone }) {
     <Modal title="Добавить участника" onClose={onClose}
       footer={
         <>
-          <button className="btn btn-secondary" onClick={onClose}>Отмена</button>
-          <button className="btn btn-primary" disabled={!employeeId || mut.isPending}
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Отмена</button>
+          <button type="button" className="btn btn-primary" disabled={!employeeId || mut.isPending}
             onClick={() => mut.mutate({ employee_id: employeeId, project_id: projectId, rate: Number(rate), valid_from: validFrom, valid_to: validTo || null })}
           >
             {mut.isPending ? <span className="spinner" /> : 'Добавить'}

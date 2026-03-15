@@ -97,10 +97,10 @@ export default function EmployeeDetailPage() {
     <div>
       {/* Back + actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/employees')}>← Назад</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate('/employees')}>← Назад</button>
         <div style={{ flex: 1 }} />
-        <button className="btn btn-secondary" onClick={() => { setEditForm({ ...emp }); setEditModal(true) }}>✏ Редактировать</button>
-        <button className="btn btn-danger btn-sm" onClick={() => setDeleteConfirm(true)}>🗑 Удалить</button>
+        <button type="button" className="btn btn-secondary" onClick={() => { setEditForm({ ...emp }); setEditModal(true) }}>✏ Редактировать</button>
+        <button type="button" className="btn btn-danger btn-sm" onClick={() => setDeleteConfirm(true)}>🗑 Удалить</button>
       </div>
 
       {/* Header card */}
@@ -149,7 +149,7 @@ export default function EmployeeDetailPage() {
       <div className="card" style={{ padding: '16px 20px', marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div className="fw-600">Проекты</div>
-          <button className="btn btn-secondary btn-sm" onClick={() => setAssignModal(true)}>+ Добавить в проект</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAssignModal(true)}>+ Добавить в проект</button>
         </div>
         {emp.assignments.length === 0
           ? <div className="text-muted text-small">Не привязан ни к одному проекту</div>
@@ -171,7 +171,7 @@ export default function EmployeeDetailPage() {
                   <td className="td text-muted">{fmtDate(a.valid_from)}</td>
                   <td className="td text-muted">{a.valid_to ? fmtDate(a.valid_to) : 'по сей день'}</td>
                   <td className="td">
-                    <button className="btn btn-ghost btn-sm" onClick={() => deleteAssignMut.mutate(a.id)}>✕</button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => deleteAssignMut.mutate(a.id)}>✕</button>
                   </td>
                 </tr>
               ))}
@@ -255,8 +255,8 @@ export default function EmployeeDetailPage() {
           onClose={() => setEditModal(false)}
           footer={
             <>
-              <button className="btn btn-secondary" onClick={() => setEditModal(false)}>Отмена</button>
-              <button className="btn btn-primary" onClick={() => updateMut.mutate(editForm)} disabled={updateMut.isPending}>
+              <button type="button" className="btn btn-secondary" onClick={() => setEditModal(false)}>Отмена</button>
+              <button type="button" className="btn btn-primary" onClick={() => updateMut.mutate(editForm)} disabled={updateMut.isPending}>
                 {updateMut.isPending ? <span className="spinner" /> : 'Сохранить'}
               </button>
             </>
@@ -327,8 +327,8 @@ function SalaryModal({ month, year, form, setForm, extend, setExtend, onSave, on
       onClose={onClose}
       footer={
         <>
-          <button className="btn btn-secondary" onClick={onClose}>Отмена</button>
-          <button className="btn btn-primary" onClick={onSave} disabled={loading}>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Отмена</button>
+          <button type="button" className="btn btn-primary" onClick={onSave} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Сохранить'}
           </button>
         </>
@@ -396,8 +396,9 @@ function AddAssignmentModal({ employeeId, onClose, onDone }) {
       onClose={onClose}
       footer={
         <>
-          <button className="btn btn-secondary" onClick={onClose}>Отмена</button>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Отмена</button>
           <button
+            type="button"
             className="btn btn-primary"
             disabled={!projectId || mut.isPending}
             onClick={() => mut.mutate({ employee_id: employeeId, project_id: projectId, rate: Number(rate), valid_from: validFrom, valid_to: validTo || null })}

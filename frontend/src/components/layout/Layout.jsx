@@ -88,7 +88,7 @@ export default function Layout() {
 
         {/* Logout */}
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
-          <button className="btn btn-ghost" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={handleLogout}>
+          <button type="button" className="btn btn-ghost" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={handleLogout}>
             🚪 Выйти
           </button>
         </div>

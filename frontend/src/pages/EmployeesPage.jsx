@@ -93,16 +93,16 @@ function ImportModal({ paste, setPaste, parsed, setParsed, error, setError, succ
       wide
       footer={
         successMessage ? (
-          <button className="btn btn-primary" onClick={onClose}>Закрыть</button>
+          <button type="button" className="btn btn-primary" onClick={onClose}>Закрыть</button>
         ) : (
           <>
-            <button className="btn btn-secondary" onClick={onClose}>Отмена</button>
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Отмена</button>
             {parsed ? (
-              <button className="btn btn-primary" onClick={onImport} disabled={loading || parsed.length === 0}>
+              <button type="button" className="btn btn-primary" onClick={onImport} disabled={loading || parsed.length === 0}>
                 {loading ? <span className="spinner" /> : `Импортировать ${parsed.length} записей`}
               </button>
             ) : (
-              <button className="btn btn-primary" onClick={handleParse}>Проверить и показать превью</button>
+              <button type="button" className="btn btn-primary" onClick={handleParse}>Проверить и показать превью</button>
             )}
           </>
         )
@@ -300,9 +300,9 @@ export default function EmployeesPage() {
           <div className="page-subtitle">{employees.length} записей</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn btn-secondary btn-sm" onClick={handleExport}>⬇ Excel</button>
-          <button className="btn btn-secondary btn-sm" onClick={() => { setImportModal(true); setImportPaste(''); setImportParsed(null); setImportError('') }}>📥 Импорт</button>
-          <button className="btn btn-primary" onClick={() => { setForm(EMPTY_FORM); setFormError(''); setShowModal(true) }}>+ Добавить</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={handleExport}>⬇ Excel</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setImportModal(true); setImportPaste(''); setImportParsed(null); setImportError('') }}>📥 Импорт</button>
+          <button type="button" className="btn btn-primary" onClick={() => { setForm(EMPTY_FORM); setFormError(''); setShowModal(true) }}>+ Добавить</button>
           <button
             type="button"
             className="btn btn-danger btn-sm"
@@ -382,8 +382,8 @@ export default function EmployeesPage() {
           onClose={() => { setShowModal(false); setFormError('') }}
           footer={
             <>
-              <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Отмена</button>
-              <button className="btn btn-primary" onClick={() => createMut.mutate(form)} disabled={createMut.isPending}>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Отмена</button>
+              <button type="button" className="btn btn-primary" onClick={() => createMut.mutate(form)} disabled={createMut.isPending}>
                 {createMut.isPending ? <span className="spinner" /> : 'Создать'}
               </button>
             </>
@@ -495,7 +495,7 @@ function EmployeeRow({ emp, year, onOpen, onDelete }) {
         )
       })}
       <td className="td">
-        <button className="btn btn-ghost btn-sm btn-icon" onClick={(e) => { e.stopPropagation(); onDelete() }}>🗑</button>
+        <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={(e) => { e.stopPropagation(); onDelete() }}>🗑</button>
       </td>
     </tr>
   )

@@ -12,7 +12,7 @@ export default function Modal({ title, onClose, children, footer, wide }) {
       <div className="modal" style={wide ? { maxWidth: 720 } : {}}>
         <div className="modal-header">
           <span className="modal-title">{title}</span>
-          <button className="btn btn-ghost btn-icon" onClick={onClose}>✕</button>
+          <button type="button" className="btn btn-ghost btn-icon" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}

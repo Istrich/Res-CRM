@@ -61,8 +61,12 @@ class Project(Base):
     )
 
     budget_project: Mapped["BudgetProject | None"] = relationship("BudgetProject", back_populates="projects")
-    employee_projects: Mapped[list["EmployeeProject"]] = relationship("EmployeeProject", back_populates="project")
-    budget_snapshots: Mapped[list["BudgetSnapshot"]] = relationship("BudgetSnapshot", back_populates="project")
+    employee_projects: Mapped[list["EmployeeProject"]] = relationship(
+        "EmployeeProject", back_populates="project", cascade="all, delete-orphan"
+    )
+    budget_snapshots: Mapped[list["BudgetSnapshot"]] = relationship(
+        "BudgetSnapshot", back_populates="project", cascade="all, delete-orphan"
+    )
 
 
 # ---------------------------------------------------------------------------
