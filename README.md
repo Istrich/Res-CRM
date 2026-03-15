@@ -1,20 +1,23 @@
-# Mini CRM
+# Mini CRM (Res-CRM)
 
-Веб-приложение для учёта сотрудников, проектов и бюджетов.
+Веб-приложение для учёта сотрудников, проектов и бюджетов: карточки сотрудников и позиций, привязка к проектам со ставками по месяцам, вознаграждение (оклад + премии), расчёт расходов по проектам и бюджетный контроль.
 
 ## Быстрый старт
 
-### 1. Запустить базу данных и backend
+### 1. База данных и backend
 
 ```bash
-cd mini-crm
+cd Res-CRM
 docker compose up -d
 
-# Применить миграции
+# Миграции (один раз или после изменений схемы)
 docker compose exec backend alembic upgrade head
 ```
 
-### 2. Запустить frontend
+Backend: **http://localhost:8000**  
+Swagger: **http://localhost:8000/docs**
+
+### 2. Frontend
 
 ```bash
 cd frontend
@@ -22,41 +25,54 @@ npm install
 npm run dev
 ```
 
-Приложение доступно на **http://localhost:3000**
+Приложение: **http://localhost:3000**  
+Запросы к API идут через Vite proxy: `/api/*` → `http://localhost:8000/*`.
 
-Логин по умолчанию: `admin` / `admin123`  
-Изменить в `backend/.env` → `ADMIN_USERNAME`, `ADMIN_PASSWORD`
+**Логин по умолчанию:** `admin` / `admin123`  
+Изменить в `backend/.env`: `ADMIN_USERNAME`, `ADMIN_PASSWORD`.
 
 ---
 
-## Архитектура
+## Стек
+
+| Часть     | Технологии |
+|----------|------------|
+| Backend  | Python 3.11, FastAPI, SQLAlchemy 2, Pydantic, Alembic, PostgreSQL |
+| Frontend | React 18, Vite 6, React Router 6, TanStack Query v5, Zustand, Axios |
+| Инфра    | Docker Compose (PostgreSQL 16 + backend) |
+
+---
+
+## Структура проекта
 
 ```
-mini-crm/
-├── backend/                   # FastAPI + PostgreSQL
+Res-CRM/
+├── backend/
 │   ├── app/
-│   │   ├── main.py            # Точка входа, CORS, lifespan
-│   │   ├── config.py          # Настройки через pydantic-settings
-│   │   ├── database.py        # SQLAlchemy engine + session
-│   │   ├── dependencies.py    # JWT auth dependency
-│   │   ├── models/            # SQLAlchemy ORM (7 таблиц)
-│   │   ├── schemas/           # Pydantic in/out схемы
-│   │   ├── routers/           # FastAPI роутеры (8 модулей)
-│   │   └── services/
-│   │       ├── auth.py        # JWT, bcrypt
-│   │       ├── calc.py        # Движок расчётов бюджетов
-│   │       └── export.py      # Excel выгрузки (openpyxl)
-│   └── migrations/            # Alembic миграции
+│   │   ├── main.py           # FastAPI app, CORS, lifespan, роутеры
+│   │   ├── config.py         # pydantic-settings
+│   │   ├── database.py       # SQLAlchemy engine, SessionLocal
+│   │   ├── dependencies.py   # get_current_user (JWT)
+│   │   ├── models/           # ORM: User, BudgetProject, Project, Employee, EmployeeProject, AssignmentMonthRate, SalaryRecord, BudgetSnapshot
+│   │   ├── schemas/          # Pydantic (employee, project, assignment, auth)
+│   │   ├── routers/          # auth, employees, projects, budget_projects, assignments, budgets, dashboard, exports
+│   │   └── services/         # auth.py, calc.py, export.py, import_employees.py
+│   ├── migrations/           # Alembic (0001_initial, 0002_assignment_month_rates, 0003_salary_record_is_raise)
+│   ├── requirements.txt
+│   └── .env                  # DATABASE_URL, SECRET_KEY, ADMIN_*
 │
-├── frontend/                  # React + Vite
+├── frontend/
 │   └── src/
-│       ├── api/               # Axios client + все API функции
-│       ├── components/        # Layout, Modal, Confirm, формы
-│       ├── pages/             # 9 страниц
-│       ├── store/             # Zustand (auth, year)
-│       └── utils/             # fmt, fmtDate, downloadBlob, MONTHS
+│       ├── api/              # client.js (axios, /api, JWT), index.js (все вызовы API)
+│       ├── components/        # Layout, Modal, Confirm, EmployeeForm, AssignmentManager
+│       ├── pages/             # Login, Dashboard, Employees, EmployeeDetail, Hiring, Projects, ProjectDetail, BudgetProjects, BudgetProjectDetail, Budgets
+│       ├── store/             # auth.js, year.js (Zustand)
+│       └── utils/             # fmt, fmtDate, MONTHS, statusLabel, statusColor, downloadBlob
 │
-└── docker-compose.yml         # PostgreSQL + backend
+├── docs/                      # WORKFLOW.md, AGENTS.md, agents/, plans/
+├── docker-compose.yml
+├── README.md
+└── CONTEXT.md                 # Полный контекст для Cursor/IDE
 ```
 
 ---
@@ -64,88 +80,37 @@ mini-crm/
 ## Модель данных
 
 | Таблица | Назначение |
-|---|---|
-| `users` | Один администратор (JWT auth) |
-| `budget_projects` | Финансовая сущность верхнего уровня |
-| `projects` | Рабочие проекты, FK → budget_projects |
-| `employees` | Сотрудники и позиции (флаг `is_position`) |
-| `employee_projects` | Привязка к проекту: ставка, период |
-| `salary_records` | Вознаграждение по месяцам (4 компонента) |
-| `budget_snapshots` | Кэш расчётов по проектам |
+|--------|------------|
+| `users` | Один администратор, JWT |
+| `budget_projects` | Бюджетный проект (год, общий бюджет) |
+| `projects` | Рабочий проект, FK → budget_projects (SET NULL при удалении) |
+| `employees` | Сотрудники и позиции (`is_position`) |
+| `employee_projects` | Назначение на проект: ставка, valid_from/valid_to |
+| `assignment_month_rates` | Переопределение ставки по месяцам (assignment_id, year, month, rate) |
+| `salary_records` | Вознаграждение по месяцам: salary, kpi_bonus, fixed_bonus, one_time_bonus, is_raise |
+| `budget_snapshots` | Кэш расхода по проекту/месяцу (amount, is_forecast) |
 
 ---
 
-## Бизнес-правила
+## Бизнес-правила (расчёт)
 
-**Активность сотрудника в месяце:**
-- `hire_date > конец месяца` → не активен
-- `termination_date <= первый день месяца` → не активен (уволен 1-го = не работал)
-- Иначе → активен, расход считается за полный месяц
-
-**Расчёт расхода:**
-```
-monthly_cost = salary + kpi_bonus + fixed_bonus + one_time_bonus
-project_cost = monthly_cost × rate
-```
-
-**Зарплатный fallback:** если на месяц нет записи — берётся последняя из того же года, затем из предыдущих лет.
-
-**Ставки:** сумма ставок может быть > 1.0 (явное допущение). При < 1.0 — предупреждение в UI.
-
-**Прогноз:** факт (прошлые месяцы) + план (будущие месяцы по текущим ставкам).
-
-**Статусы бюджета:**
-- `ok` — прогноз ≤ бюджет
-- `warning` — прогноз > 90% бюджета
-- `overrun` — прогноз > бюджет
+- **Активность в месяце:** учёт hire_date и termination_date (увольнение с 1-го = не работал в том месяце).
+- **Стоимость сотрудника в месяце:** сумма salary + kpi_bonus + fixed_bonus + one_time_bonus (fallback по последней записи за год/прошлые годы).
+- **Ставка в месяце:** из `assignment_month_rates` при наличии, иначе `employee_projects.rate`.
+- **Расход проекта в месяц:** сумма по всем назначениям (активным в месяце): `monthly_cost × rate`.
+- **Прогноз:** факт за прошлые месяцы + расчёт по текущим ставкам/зарплатам на будущие.
+- **Статусы бюджета:** ok / warning (>90% бюджета) / overrun.
 
 ---
 
-## API
+## Основные сценарии в UI
 
-Документация доступна на **http://localhost:8000/docs** (Swagger UI).
-
-Базовые эндпоинты:
-
-```
-POST   /auth/login                   Авторизация
-GET    /auth/me                      Текущий пользователь
-
-GET    /employees                    Список сотрудников/позиций
-POST   /employees                    Создать
-GET    /employees/{id}               Карточка
-PATCH  /employees/{id}               Обновить
-DELETE /employees/{id}               Удалить
-PUT    /employees/{id}/salary/{y}/{m} Зарплата за месяц
-
-GET    /projects                     Список проектов
-POST   /projects                     Создать
-GET    /projects/{id}                Карточка
-PATCH  /projects/{id}                Обновить
-GET    /projects/{id}/employees      Участники
-DELETE /projects/{id}/employees/{aid} Убрать из проекта
-
-GET    /budget-projects              Бюджетные проекты
-POST   /budget-projects              Создать
-
-POST   /assignments                  Привязать к проекту
-PATCH  /assignments/{id}             Изменить ставку/период
-DELETE /assignments/{id}             Удалить привязку
-
-POST   /budgets/recalculate?year=    Пересчитать все бюджеты
-GET    /budgets/overview?year=       Сводка по всем проектам
-GET    /budgets/projects/{id}?year=  Бюджет проекта
-
-GET    /dashboard/summary?year=      KPI-метрики
-GET    /dashboard/by-project?year=   По проектам
-GET    /dashboard/by-department?year= По подразделениям
-GET    /dashboard/movements?year=    Движение персонала
-
-GET    /exports/employees?year=      → .xlsx
-GET    /exports/payroll?year=        → .xlsx
-GET    /exports/projects-budget?year= → .xlsx
-GET    /exports/budget-projects?year= → .xlsx
-```
+- **Сотрудники:** список с фильтрами, карточка, ЗП по месяцам (в т.ч. «Повышение» — зелёная подсветка), назначения на проекты, импорт (вставка таблицы / Excel), экспорт, временная кнопка «Удалить всех».
+- **Найм:** вкладка со списком только позиций (`is_position=true`).
+- **Проекты:** список, карточка проекта, участники, ставки по месяцам (12 колонок), предупреждение при сумме ставок ≠ 1.
+- **Бюджетные проекты:** список за год, карточка, привязка проектов.
+- **Бюджеты:** пересчёт, сводка, экспорты (проекты, бюджетные, ФОТ).
+- **Дашборд:** сводки по году, по проектам, подразделениям, специализациям, движение персонала.
 
 ---
 
@@ -162,31 +127,8 @@ ADMIN_PASSWORD=admin123
 
 ---
 
-## Excel выгрузки
+## Документация и воркфлоу
 
-Доступны со страниц:
-- **Сотрудники** → список с ЗП по месяцам
-- **Бюджеты** → кнопки «⬇ Проекты», «⬇ Бюджетные», «⬇ ФОТ»
-
-ФОТ-выгрузка содержит два листа: сводный и детализированный (по каждому компоненту вознаграждения).
-
----
-
-## Workflow и агенты
-
-Для разработки задан обязательный воркфлоу и набор ролей (агентов):
-
-- **Воркфлоу:** [docs/WORKFLOW.md](docs/WORKFLOW.md) — порядок этапов (Architect → Implementer → Tester → Guardian → Documenter), обязательное создание тестов на все изменения поведения.
-- **Агенты:** [docs/AGENTS.md](docs/AGENTS.md) — список ролей и ссылки на детальные инструкции в `docs/agents/` и `.claude/agents/`.
-
-Планы изменений: `docs/plans/YYYY-MM-DD-<slug>.md`.
-
----
-
-## Расширение системы
-
-**Импорт из Excel** — следующий этап. Endpoint: `POST /imports/employees/preview` + `/commit`.
-
-**Мультипользовательский режим** — добавить таблицу ролей и `role` поле в `users`. Зависимость `get_current_user` уже изолирована в `dependencies.py`.
-
-**Партиционирование** — если данных > 1M строк, добавить партиционирование `salary_records` и `budget_snapshots` по `year` в новой миграции.
+- **Воркфлоу и агенты:** [docs/WORKFLOW.md](docs/WORKFLOW.md), [docs/AGENTS.md](docs/AGENTS.md).
+- **Планы изменений:** `docs/plans/YYYY-MM-DD-<slug>.md`.
+- **Полный контекст для разработки и AI:** [CONTEXT.md](CONTEXT.md).
