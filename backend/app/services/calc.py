@@ -16,7 +16,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.models import BudgetProject, BudgetSnapshot, Employee, EmployeeProject, Project, SalaryRecord
+from app.models import AssignmentMonthRate, BudgetProject, BudgetSnapshot, Employee, EmployeeProject, Project, SalaryRecord
 
 
 def _month_start(year: int, month: int) -> date:
@@ -106,6 +106,27 @@ def get_assignments_for_month(db: Session, employee_id, year: int, month: int) -
     )
 
 
+def get_employee_month_total_rate(db: Session, employee_id, year: int, month: int) -> float:
+    """
+    Sum of rates across all project assignments of this employee in the given month.
+    Uses AssignmentMonthRate override when present, else assignment.rate.
+    """
+    assignments = get_assignments_for_month(db, employee_id, year, month)
+    total = 0.0
+    for asgn in assignments:
+        override = (
+            db.query(AssignmentMonthRate)
+            .filter(
+                AssignmentMonthRate.assignment_id == asgn.id,
+                AssignmentMonthRate.year == year,
+                AssignmentMonthRate.month == month,
+            )
+            .first()
+        )
+        total += float(override.rate) if override else float(asgn.rate)
+    return round(total, 2)
+
+
 def calc_employee_month_cost(db: Session, emp: Employee, year: int, month: int) -> float:
     """Total compensation for employee in given month (gross)."""
     if not employee_active_in_month(emp, year, month):
@@ -139,7 +160,17 @@ def calc_project_month_cost(db: Session, project_id, year: int, month: int) -> f
         if emp is None:
             continue
         emp_cost = calc_employee_month_cost(db, emp, year, month)
-        total += emp_cost * float(asgn.rate)
+        rate_override = (
+            db.query(AssignmentMonthRate)
+            .filter(
+                AssignmentMonthRate.assignment_id == asgn.id,
+                AssignmentMonthRate.year == year,
+                AssignmentMonthRate.month == month,
+            )
+            .first()
+        )
+        rate = float(rate_override.rate) if rate_override else float(asgn.rate)
+        total += emp_cost * rate
 
     return round(total, 2)
 

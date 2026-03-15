@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getEmployees, createEmployee, deleteEmployee, exportEmployees } from '../api'
+import { getEmployees, createEmployee, deleteEmployee, exportEmployees, importEmployees, importEmployeesExcel } from '../api'
 import { useYearStore } from '../store/year'
-import { MONTHS, fmtDate, downloadBlob } from '../utils'
+import { MONTHS, fmt, fmtDate, downloadBlob } from '../utils'
 import Modal from '../components/ui/Modal'
 import Confirm from '../components/ui/Confirm'
 
@@ -11,6 +11,146 @@ const EMPTY_FORM = {
   is_position: false, first_name: '', last_name: '', middle_name: '',
   title: '', department: '', specialization: '', comment: '',
   hire_date: '', termination_date: '',
+}
+
+const IMPORT_HEADERS = [
+  'Фамилия', 'Имя', 'Отчество', 'Специализация', 'Должность', 'Подразделение',
+  'Дата найма', 'Дата увольнения', 'Комментарий',
+]
+const IMPORT_HEADER_MAP = {
+  'фамилия': 'last_name', 'имя': 'first_name', 'отчество': 'middle_name',
+  'специализация': 'specialization', 'должность': 'title', 'подразделение': 'department',
+  'дата найма': 'hire_date', 'дата увольнения': 'termination_date', 'комментарий': 'comment',
+}
+
+function parseImportDate(s) {
+  if (!s || typeof s !== 'string') return null
+  const t = s.trim()
+  if (!t) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t
+  const d = t.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/)
+  if (d) {
+    const [, day, month, year] = d
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+  const parsed = new Date(t)
+  return isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10)
+}
+
+function parseImportTable(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  if (lines.length < 2) return { rows: [], error: 'Нужна строка заголовков и хотя бы одна строка данных' }
+  const delim = lines[0].includes('\t') ? '\t' : ','
+  const headerLine = lines[0].split(delim).map((c) => c.trim().toLowerCase())
+  const colIndex = {}
+  headerLine.forEach((h, i) => {
+    const key = IMPORT_HEADER_MAP[h]
+    if (key) colIndex[key] = i
+  })
+  const rows = []
+  for (let i = 1; i < lines.length; i++) {
+    const cells = lines[i].split(delim).map((c) => c.trim())
+    const row = {
+      last_name: cells[colIndex.last_name] ?? null,
+      first_name: cells[colIndex.first_name] ?? null,
+      middle_name: cells[colIndex.middle_name] ?? null,
+      specialization: cells[colIndex.specialization] ?? null,
+      title: cells[colIndex.title] ?? null,
+      department: cells[colIndex.department] ?? null,
+      hire_date: parseImportDate(cells[colIndex.hire_date]),
+      termination_date: parseImportDate(cells[colIndex.termination_date]),
+      comment: cells[colIndex.comment] ?? null,
+    }
+    rows.push(row)
+  }
+  return { rows, error: null }
+}
+
+function ImportModal({ paste, setPaste, parsed, setParsed, error, setError, onImport, onImportExcel, onClose, loading, loadingExcel }) {
+  const handleParse = () => {
+    const { rows, error: err } = parseImportTable(paste)
+    setParsed(err ? null : rows)
+    setError(err || '')
+  }
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0]
+    if (file) onImportExcel(file)
+    e.target.value = ''
+  }
+  return (
+    <Modal
+      title="Импорт сотрудников"
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          <button className="btn btn-secondary" onClick={onClose}>Отмена</button>
+          {parsed ? (
+            <button className="btn btn-primary" onClick={onImport} disabled={loading || parsed.length === 0}>
+              {loading ? <span className="spinner" /> : `Импортировать ${parsed.length} записей`}
+            </button>
+          ) : (
+            <button className="btn btn-primary" onClick={handleParse}>Проверить и показать превью</button>
+          )}
+        </>
+      }
+    >
+      <div style={{ marginBottom: 16 }}>
+        <div className="fw-600" style={{ marginBottom: 6 }}>Файл Excel (.xlsx)</div>
+        <label className="btn btn-secondary btn-sm" style={{ cursor: loadingExcel ? 'not-allowed' : 'pointer' }}>
+          {loadingExcel ? <span className="spinner" /> : 'Выбрать файл и импортировать'}
+          <input type="file" accept=".xlsx,.xls" onChange={handleFileChange} disabled={loadingExcel} style={{ display: 'none' }} />
+        </label>
+        <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6 }}>Первая строка — заголовки: {IMPORT_HEADERS.join(', ')}.</p>
+      </div>
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 16 }}>
+        <div className="fw-600" style={{ marginBottom: 6 }}>Или вставьте таблицу</div>
+        <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 12 }}>
+          Столбцы: {IMPORT_HEADERS.join(', ')}. Разделитель: табуляция (из Excel) или запятая.
+        </p>
+      <textarea
+        className="input"
+        rows={8}
+        placeholder={IMPORT_HEADERS.join('\t') + '\nИванов\tИван\tИванович\t...'}
+        value={paste}
+        onChange={(e) => setPaste(e.target.value)}
+        style={{ width: '100%', fontFamily: 'monospace', fontSize: 12 }}
+      />
+      {error && <div className="alert alert-error" style={{ marginTop: 8 }}>{error}</div>}
+      {parsed != null && parsed.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div className="fw-600" style={{ marginBottom: 8 }}>Превью ({parsed.length} строк)</div>
+          <div className="overflow-table" style={{ maxHeight: 240 }}>
+            <table>
+              <thead>
+                <tr>
+                  {IMPORT_HEADERS.map((h) => <th className="th" key={h}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {parsed.slice(0, 15).map((row, idx) => (
+                  <tr key={idx}>
+                    <td className="td">{row.last_name || '—'}</td>
+                    <td className="td">{row.first_name || '—'}</td>
+                    <td className="td">{row.middle_name || '—'}</td>
+                    <td className="td">{row.specialization || '—'}</td>
+                    <td className="td">{row.title || '—'}</td>
+                    <td className="td">{row.department || '—'}</td>
+                    <td className="td">{row.hire_date || '—'}</td>
+                    <td className="td">{row.termination_date || '—'}</td>
+                    <td className="td text-small">{row.comment || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {parsed.length > 15 && <div className="text-muted text-small" style={{ marginTop: 4 }}>… и ещё {parsed.length - 15} строк</div>}
+          <div className="text-small text-muted" style={{ marginTop: 8 }}>Строки с пустой должностью будут пропущены.</div>
+        </div>
+      )}
+      </div>
+    </Modal>
+  )
 }
 
 export default function EmployeesPage() {
@@ -22,13 +162,17 @@ export default function EmployeesPage() {
   const [filterDept, setFilterDept] = useState('')
   const [filterSpec, setFilterSpec] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [importModal, setImportModal] = useState(false)
+  const [importPaste, setImportPaste] = useState('')
+  const [importParsed, setImportParsed] = useState(null)
+  const [importError, setImportError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [formError, setFormError] = useState('')
 
   const { data: employees = [], isLoading } = useQuery({
-    queryKey: ['employees', { search, department: filterDept, specialization: filterSpec }],
-    queryFn: () => getEmployees({ search: search || undefined, department: filterDept || undefined, specialization: filterSpec || undefined }),
+    queryKey: ['employees', year, { search, department: filterDept, specialization: filterSpec }],
+    queryFn: () => getEmployees({ year, search: search || undefined, department: filterDept || undefined, specialization: filterSpec || undefined }),
   })
 
   const createMut = useMutation({
@@ -53,6 +197,35 @@ export default function EmployeesPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setDeleteTarget(null) },
   })
 
+  const importMut = useMutation({
+    mutationFn: importEmployees,
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      setImportModal(false)
+      setImportPaste('')
+      setImportParsed(null)
+      setImportError('')
+      alert(`Импортировано: ${res.created} записей. Пропущено (пустая должность): ${res.skipped}`)
+    },
+    onError: (e) => {
+      const d = e.response?.data?.detail
+      setImportError(Array.isArray(d) ? d.map((x) => x.msg || x.loc?.join('.')).join(', ') : (d || 'Ошибка'))
+    },
+  })
+
+  const importExcelMut = useMutation({
+    mutationFn: importEmployeesExcel,
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      setImportModal(false)
+      setImportError('')
+      alert(`Импорт из Excel: создано ${res.created} записей, пропущено ${res.skipped}.`)
+    },
+    onError: (e) => {
+      setImportError(e.response?.data?.detail || 'Ошибка загрузки файла')
+    },
+  })
+
   const handleExport = async () => {
     const blob = await exportEmployees(year)
     downloadBlob(blob, `employees_${year}.xlsx`)
@@ -71,6 +244,7 @@ export default function EmployeesPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-secondary btn-sm" onClick={handleExport}>⬇ Excel</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => { setImportModal(true); setImportPaste(''); setImportParsed(null); setImportError('') }}>📥 Импорт</button>
           <button className="btn btn-primary" onClick={() => { setForm(EMPTY_FORM); setFormError(''); setShowModal(true) }}>+ Добавить</button>
         </div>
       </div>
@@ -154,6 +328,23 @@ export default function EmployeesPage() {
         </Modal>
       )}
 
+      {/* Import modal */}
+      {importModal && (
+        <ImportModal
+          paste={importPaste}
+          setPaste={setImportPaste}
+          parsed={importParsed}
+          setParsed={setImportParsed}
+          error={importError}
+          setError={setImportError}
+          onImport={() => importMut.mutate(importParsed)}
+          onImportExcel={(file) => importExcelMut.mutate(file)}
+          onClose={() => { setImportModal(false); setImportPaste(''); setImportParsed(null); setImportError('') }}
+          loading={importMut.isPending}
+          loadingExcel={importExcelMut.isPending}
+        />
+      )}
+
       {/* Delete confirm */}
       {deleteTarget && (
         <Confirm
@@ -207,12 +398,15 @@ function EmployeeRow({ emp, year, onOpen, onDelete }) {
             </span>
           : '—'}
       </td>
-      {/* Monthly cells - just placeholder, detail on card */}
-      {MONTHS.map((_, i) => (
-        <td className="td text-right text-muted text-small" key={i} style={{ minWidth: 70 }}>
-          —
-        </td>
-      ))}
+      {/* Monthly totals (year from context) */}
+      {MONTHS.map((_, i) => {
+        const val = emp.monthly_totals?.[i]
+        return (
+          <td className="td text-right text-small" key={i} style={{ minWidth: 70 }} onClick={onOpen}>
+            {val != null && val > 0 ? fmt(val) : <span className="text-muted">—</span>}
+          </td>
+        )
+      })}
       <td className="td">
         <button className="btn btn-ghost btn-sm btn-icon" onClick={(e) => { e.stopPropagation(); onDelete() }}>🗑</button>
       </td>

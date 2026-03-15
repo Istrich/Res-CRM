@@ -144,6 +144,29 @@ class EmployeeProject(Base):
 
     employee: Mapped["Employee"] = relationship("Employee", back_populates="employee_projects")
     project: Mapped["Project"] = relationship("Project", back_populates="employee_projects")
+    month_rates: Mapped[list["AssignmentMonthRate"]] = relationship(
+        "AssignmentMonthRate", back_populates="assignment", cascade="all, delete-orphan"
+    )
+
+
+class AssignmentMonthRate(Base):
+    """Override rate for an assignment in a specific month (for budget calc)."""
+    __tablename__ = "assignment_month_rates"
+    __table_args__ = (
+        UniqueConstraint("assignment_id", "year", "month", name="uq_assignment_year_month"),
+        CheckConstraint("month BETWEEN 1 AND 12", name="chk_month_1_12"),
+        CheckConstraint("rate > 0", name="chk_rate_positive"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    assignment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employee_projects.id", ondelete="CASCADE"), nullable=False
+    )
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+
+    assignment: Mapped["EmployeeProject"] = relationship("EmployeeProject", back_populates="month_rates")
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +191,7 @@ class SalaryRecord(Base):
     kpi_bonus: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
     fixed_bonus: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
     one_time_bonus: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    is_raise: Mapped[bool] = mapped_column(nullable=False, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

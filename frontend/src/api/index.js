@@ -8,6 +8,12 @@ export const getMe = () => api.get('/auth/me').then(r => r.data)
 export const getEmployees = (params) => api.get('/employees', { params }).then(r => r.data)
 export const getEmployee = (id) => api.get(`/employees/${id}`).then(r => r.data)
 export const createEmployee = (data) => api.post('/employees', data).then(r => r.data)
+export const importEmployees = (rows) => api.post('/employees/import', rows).then(r => r.data)
+export const importEmployeesExcel = (file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return api.post('/employees/import/excel', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data)
+}
 export const updateEmployee = (id, data) => api.patch(`/employees/${id}`, data).then(r => r.data)
 export const deleteEmployee = (id) => api.delete(`/employees/${id}`)
 
@@ -24,9 +30,11 @@ export const getProject = (id, params) => api.get(`/projects/${id}`, { params })
 export const createProject = (data) => api.post('/projects', data).then(r => r.data)
 export const updateProject = (id, data) => api.patch(`/projects/${id}`, data).then(r => r.data)
 export const deleteProject = (id) => api.delete(`/projects/${id}`)
-export const getProjectEmployees = (id) => api.get(`/projects/${id}/employees`).then(r => r.data)
+export const getProjectEmployees = (id, params) => api.get(`/projects/${id}/employees`, { params }).then(r => r.data)
 export const removeEmployeeFromProject = (projectId, assignmentId) =>
   api.delete(`/projects/${projectId}/employees/${assignmentId}`)
+export const setAssignmentRate = (assignmentId, year, month, rate) =>
+  api.put(`/assignments/${assignmentId}/rates/${year}/${month}`, { rate }).then(r => r.data)
 
 // Budget Projects
 export const getBudgetProjects = (params) => api.get('/budget-projects', { params }).then(r => r.data)

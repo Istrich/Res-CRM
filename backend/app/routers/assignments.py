@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import Employee, EmployeeProject, Project, User
-from app.schemas.assignment import AssignmentCreate, AssignmentOut, AssignmentUpdate
+from app.models import AssignmentMonthRate, Employee, EmployeeProject, Project, User
+from app.schemas.assignment import AssignmentCreate, AssignmentMonthRateSet, AssignmentOut, AssignmentUpdate
+from app.services.calc import get_employee_month_total_rate
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
 
@@ -83,6 +84,47 @@ def update_assignment(
     db.commit()
     db.refresh(asgn)
     return _build_out(asgn)
+
+
+@router.put("/{assignment_id}/rates/{year:int}/{month:int}")
+def set_assignment_month_rate(
+    assignment_id: uuid.UUID,
+    year: int,
+    month: int,
+    body: AssignmentMonthRateSet,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    if not 1 <= month <= 12:
+        raise HTTPException(status_code=400, detail="month must be 1..12")
+    asgn = db.query(EmployeeProject).filter(EmployeeProject.id == assignment_id).first()
+    if not asgn:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    rec = (
+        db.query(AssignmentMonthRate)
+        .filter(
+            AssignmentMonthRate.assignment_id == assignment_id,
+            AssignmentMonthRate.year == year,
+            AssignmentMonthRate.month == month,
+        )
+        .first()
+    )
+    if rec:
+        rec.rate = body.rate
+    else:
+        rec = AssignmentMonthRate(assignment_id=assignment_id, year=year, month=month, rate=body.rate)
+        db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    total_rate = get_employee_month_total_rate(db, asgn.employee_id, year, month)
+    return {
+        "assignment_id": str(assignment_id),
+        "year": year,
+        "month": month,
+        "rate": float(rec.rate),
+        "total_rate_in_month": total_rate,
+    }
 
 
 @router.delete("/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)

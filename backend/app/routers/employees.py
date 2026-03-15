@@ -1,8 +1,10 @@
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session, joinedload
+
+from app.services.import_employees import parse_employee_excel
 
 from app.database import get_db
 from app.dependencies import get_current_user
@@ -10,6 +12,7 @@ from app.models import Employee, EmployeeProject, SalaryRecord, User
 from app.schemas.employee import (
     AssignmentOut,
     EmployeeCreate,
+    EmployeeImportRow,
     EmployeeListItem,
     EmployeeOut,
     EmployeeUpdate,
@@ -58,8 +61,12 @@ def _build_employee_out(emp: Employee) -> EmployeeOut:
     )
 
 
-def _build_list_item(emp: Employee) -> EmployeeListItem:
+def _build_list_item(emp: Employee, year: Optional[int] = None) -> EmployeeListItem:
     assignments = [_build_assignment_out(ep) for ep in emp.employee_projects]
+    monthly_totals = None
+    if year is not None and hasattr(emp, "salary_records") and emp.salary_records is not None:
+        by_month = {r.month: float(r.total) for r in emp.salary_records if r.year == year}
+        monthly_totals = [by_month.get(m, 0.0) for m in range(1, 13)]
     return EmployeeListItem(
         id=emp.id,
         is_position=emp.is_position,
@@ -71,6 +78,7 @@ def _build_list_item(emp: Employee) -> EmployeeListItem:
         termination_date=emp.termination_date,
         assignments=assignments,
         has_projects=len(emp.employee_projects) > 0,
+        monthly_totals=monthly_totals,
     )
 
 
@@ -81,16 +89,17 @@ def list_employees(
     specialization: Optional[str] = Query(None),
     project_id: Optional[uuid.UUID] = Query(None),
     search: Optional[str] = Query(None),
+    year: Optional[int] = Query(None),
     include_terminated: bool = Query(True),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    q = (
-        db.query(Employee)
-        .options(
-            joinedload(Employee.employee_projects).joinedload(EmployeeProject.project),
-        )
-    )
+    load_opts = [
+        joinedload(Employee.employee_projects).joinedload(EmployeeProject.project),
+    ]
+    if year is not None:
+        load_opts.append(joinedload(Employee.salary_records))
+    q = db.query(Employee).options(*load_opts)
 
     if title:
         q = q.filter(Employee.title.ilike(f"%{title}%"))
@@ -109,7 +118,85 @@ def list_employees(
         q = q.join(Employee.employee_projects).filter(EmployeeProject.project_id == project_id)
 
     employees = q.order_by(Employee.last_name, Employee.first_name).all()
-    return [_build_list_item(e) for e in employees]
+    return [_build_list_item(e, year) for e in employees]
+
+
+def _create_employees_from_rows(rows: list, db: Session) -> tuple[int, int]:
+    """Create employees from list of dicts or EmployeeImportRow. Returns (created, skipped)."""
+    created = 0
+    skipped = 0
+    for row in rows:
+        if hasattr(row, "title"):
+            title = (row.title or "").strip()
+            first_name = (row.first_name or "").strip() or None
+            last_name = (row.last_name or "").strip() or None
+            middle_name = (row.middle_name or "").strip() or None
+            department = (row.department or "").strip() or None
+            specialization = (row.specialization or "").strip() or None
+            comment = (row.comment or "").strip() or None
+            hire_date = getattr(row, "hire_date", None)
+            termination_date = getattr(row, "termination_date", None)
+        else:
+            title = (row.get("title") or "").strip()
+            first_name = (row.get("first_name") or "").strip() or None
+            last_name = (row.get("last_name") or "").strip() or None
+            middle_name = (row.get("middle_name") or "").strip() or None
+            department = (row.get("department") or "").strip() or None
+            specialization = (row.get("specialization") or "").strip() or None
+            comment = (row.get("comment") or "").strip() or None
+            hire_date = row.get("hire_date")
+            termination_date = row.get("termination_date")
+        if not title:
+            skipped += 1
+            continue
+        emp = Employee(
+            is_position=False,
+            first_name=first_name,
+            last_name=last_name,
+            middle_name=middle_name,
+            title=title,
+            department=department,
+            specialization=specialization,
+            comment=comment,
+            hire_date=hire_date,
+            termination_date=termination_date,
+        )
+        db.add(emp)
+        created += 1
+    return created, skipped
+
+
+@router.post("/import")
+def import_employees(
+    body: list[EmployeeImportRow],
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Bulk create employees from import rows. Rows with empty title are skipped."""
+    created, skipped = _create_employees_from_rows(body, db)
+    db.commit()
+    return {"created": created, "skipped": skipped}
+
+
+@router.post("/import/excel")
+async def import_employees_excel(
+    file: UploadFile = File(..., description="Excel file (.xlsx) with header row"),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Bulk create employees from uploaded Excel. First row = headers."""
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Expected .xlsx file")
+    content = await file.read()
+    try:
+        rows = parse_employee_excel(content)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Ошибка чтения Excel: {e!s}") from e
+    if not rows:
+        return {"created": 0, "skipped": 0}
+    created, skipped = _create_employees_from_rows(rows, db)
+    db.commit()
+    return {"created": created, "skipped": skipped}
 
 
 @router.post("", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)

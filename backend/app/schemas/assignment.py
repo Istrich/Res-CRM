@@ -33,6 +33,18 @@ class AssignmentUpdate(BaseModel):
         return v
 
 
+class AssignmentMonthRateSet(BaseModel):
+    """Body for setting rate for one (assignment, year, month)."""
+    rate: float
+
+    @field_validator("rate")
+    @classmethod
+    def rate_positive(cls, v):
+        if v <= 0:
+            raise ValueError("rate must be > 0")
+        return v
+
+
 class AssignmentOut(BaseModel):
     id: uuid.UUID
     employee_id: uuid.UUID

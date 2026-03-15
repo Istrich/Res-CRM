@@ -14,6 +14,7 @@ class SalaryRecordOut(BaseModel):
     fixed_bonus: float
     one_time_bonus: float
     total: float
+    is_raise: bool = False
 
     class Config:
         from_attributes = True
@@ -29,6 +30,7 @@ class SalaryRecordOut(BaseModel):
             fixed_bonus=float(obj.fixed_bonus),
             one_time_bonus=float(obj.one_time_bonus),
             total=obj.total,
+            is_raise=getattr(obj, "is_raise", False),
         )
 
 
@@ -37,6 +39,7 @@ class SalaryRecordUpsert(BaseModel):
     kpi_bonus: float = 0
     fixed_bonus: float = 0
     one_time_bonus: float = 0
+    is_raise: bool = False
 
 
 class ProjectBrief(BaseModel):
@@ -57,6 +60,26 @@ class AssignmentOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class EmployeeImportRow(BaseModel):
+    """One row for bulk import. Column order: Фамилия, Имя, Отчество, Специализация, Должность, Подразделение, Дата найма, Дата увольнения, Комментарий."""
+    last_name: Optional[str] = None
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    specialization: Optional[str] = None
+    title: Optional[str] = None  # должность, required in DB (non-empty)
+    department: Optional[str] = None
+    hire_date: Optional[date] = None
+    termination_date: Optional[date] = None
+    comment: Optional[str] = None
+
+    @model_validator(mode="after")
+    def check_dates(self):
+        if self.hire_date and self.termination_date:
+            if self.termination_date < self.hire_date:
+                raise ValueError("termination_date cannot be before hire_date")
+        return self
 
 
 class EmployeeCreate(BaseModel):
@@ -132,6 +155,7 @@ class EmployeeListItem(BaseModel):
     termination_date: Optional[date]
     assignments: list[AssignmentOut] = []
     has_projects: bool
+    monthly_totals: Optional[list[float]] = None  # 12 values for the requested year (Jan..Dec)
 
     class Config:
         from_attributes = True

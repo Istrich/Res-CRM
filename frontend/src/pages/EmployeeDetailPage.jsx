@@ -22,8 +22,9 @@ export default function EmployeeDetailPage() {
   const [editModal, setEditModal] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [salaryModal, setSalaryModal] = useState(null) // { month } | null
+  const [salaryExtend, setSalaryExtend] = useState({ salary: false, kpi_bonus: false, fixed_bonus: false, one_time_bonus: false })
   const [assignModal, setAssignModal] = useState(false)
-  const [salaryForm, setSalaryForm] = useState({ salary: 0, kpi_bonus: 0, fixed_bonus: 0, one_time_bonus: 0 })
+  const [salaryForm, setSalaryForm] = useState({ salary: 0, kpi_bonus: 0, fixed_bonus: 0, one_time_bonus: 0, is_raise: false })
   const [editForm, setEditForm] = useState(null)
 
   const { data: emp, isLoading } = useQuery({
@@ -56,7 +57,26 @@ export default function EmployeeDetailPage() {
   })
 
   const salarySaveMut = useMutation({
-    mutationFn: ({ month, data }) => upsertSalary(id, year, month, data),
+    mutationFn: async ({ month, data, extend, byMonth }) => {
+      const hasExtend = extend.salary || extend.kpi_bonus || extend.fixed_bonus || extend.one_time_bonus
+      const months = hasExtend ? Array.from({ length: 13 - month }, (_, i) => month + i) : [month]
+      for (const m of months) {
+        let payload
+        if (m === month) {
+          payload = { salary: data.salary, kpi_bonus: data.kpi_bonus, fixed_bonus: data.fixed_bonus, one_time_bonus: data.one_time_bonus, is_raise: Boolean(data.is_raise) }
+        } else {
+          const rec = byMonth[m]
+          payload = {
+            salary: extend.salary ? Number(data.salary ?? 0) : Number(rec?.salary ?? 0),
+            kpi_bonus: extend.kpi_bonus ? Number(data.kpi_bonus ?? 0) : Number(rec?.kpi_bonus ?? 0),
+            fixed_bonus: extend.fixed_bonus ? Number(data.fixed_bonus ?? 0) : Number(rec?.fixed_bonus ?? 0),
+            one_time_bonus: extend.one_time_bonus ? Number(data.one_time_bonus ?? 0) : Number(rec?.one_time_bonus ?? 0),
+            is_raise: false,
+          }
+        }
+        await upsertSalary(id, year, m, payload)
+      }
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['employee', id] }); setSalaryModal(null) },
   })
 
@@ -190,11 +210,17 @@ export default function EmployeeDetailPage() {
                   {MONTHS.map((_, i) => {
                     const rec = salaryByMonth[i + 1]
                     const val = rec ? rec[key] : null
+                    const isRaiseMonth = rec?.is_raise === true
                     return (
                       <td
                         className="td text-right"
                         key={i}
-                        style={{ cursor: key !== 'total' ? 'pointer' : 'default', fontWeight: bold ? 600 : 400 }}
+                        style={{
+                          cursor: key !== 'total' ? 'pointer' : 'default',
+                          fontWeight: bold ? 600 : 400,
+                          ...(isRaiseMonth ? { background: 'var(--green-light, rgba(34, 197, 94, 0.12))' } : {}),
+                        }}
+                        title={isRaiseMonth ? 'Повышение с этого месяца' : undefined}
                         onClick={() => {
                           if (key === 'total') return
                           const existing = salaryByMonth[i + 1]
@@ -203,8 +229,9 @@ export default function EmployeeDetailPage() {
                             kpi_bonus: existing?.kpi_bonus ?? 0,
                             fixed_bonus: existing?.fixed_bonus ?? 0,
                             one_time_bonus: existing?.one_time_bonus ?? 0,
+                            is_raise: existing?.is_raise ?? false,
                           })
-                          setSalaryModal({ month: i + 1 })
+                          setSalaryExtend({ salary: false, kpi_bonus: false, fixed_bonus: false, one_time_bonus: false }); setSalaryModal({ month: i + 1 })
                         }}
                       >
                         {val != null && val !== 0 ? fmt(val) : <span className="text-muted">—</span>}
@@ -246,7 +273,14 @@ export default function EmployeeDetailPage() {
           year={year}
           form={salaryForm}
           setForm={setSalaryForm}
-          onSave={() => salarySaveMut.mutate({ month: salaryModal.month, data: salaryForm })}
+          extend={salaryExtend}
+          setExtend={setSalaryExtend}
+          onSave={() => salarySaveMut.mutate({
+            month: salaryModal.month,
+            data: salaryForm,
+            extend: salaryExtend,
+            byMonth: salaryByMonth,
+          })}
           onClose={() => setSalaryModal(null)}
           loading={salarySaveMut.isPending}
         />
@@ -257,7 +291,7 @@ export default function EmployeeDetailPage() {
         <AddAssignmentModal
           employeeId={id}
           onClose={() => setAssignModal(false)}
-          onDone={() => { qc.invalidateQueries(['employee', id]); setAssignModal(false) }}
+          onDone={() => { qc.invalidateQueries({ queryKey: ['employee', id] }); setAssignModal(false) }}
         />
       )}
 
@@ -274,9 +308,18 @@ export default function EmployeeDetailPage() {
   )
 }
 
-function SalaryModal({ month, year, form, setForm, onSave, onClose, loading }) {
+const SALARY_FIELDS = [
+  { key: 'salary', label: 'Оклад (gross)' },
+  { key: 'kpi_bonus', label: 'KPI премия' },
+  { key: 'fixed_bonus', label: 'Фикс. надбавка' },
+  { key: 'one_time_bonus', label: 'Разовая премия' },
+]
+
+function SalaryModal({ month, year, form, setForm, extend, setExtend, onSave, onClose, loading }) {
   const f = (field) => (e) => setForm({ ...form, [field]: Number(e.target.value) })
   const total = (form.salary || 0) + (form.kpi_bonus || 0) + (form.fixed_bonus || 0) + (form.one_time_bonus || 0)
+  const restMonthsCount = 13 - month
+  const showExtend = restMonthsCount > 1
 
   return (
     <Modal
@@ -292,24 +335,40 @@ function SalaryModal({ month, year, form, setForm, onSave, onClose, loading }) {
       }
     >
       <div className="grid-2">
-        <div className="form-group">
-          <label className="label">Оклад (gross)</label>
-          <input className="input" type="number" value={form.salary} onChange={f('salary')} />
-        </div>
-        <div className="form-group">
-          <label className="label">KPI премия</label>
-          <input className="input" type="number" value={form.kpi_bonus} onChange={f('kpi_bonus')} />
-        </div>
-        <div className="form-group">
-          <label className="label">Фикс. надбавка</label>
-          <input className="input" type="number" value={form.fixed_bonus} onChange={f('fixed_bonus')} />
-        </div>
-        <div className="form-group">
-          <label className="label">Разовая премия</label>
-          <input className="input" type="number" value={form.one_time_bonus} onChange={f('one_time_bonus')} />
-        </div>
+        {SALARY_FIELDS.map(({ key, label }) => (
+          <div key={key} className="form-group">
+            <label className="label">{label}</label>
+            <input className="input" type="number" value={form[key]} onChange={f(key)} />
+            {showExtend && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text-2)' }}>
+                <input
+                  type="checkbox"
+                  checked={extend[key]}
+                  onChange={(e) => setExtend({ ...extend, [key]: e.target.checked })}
+                />
+                Продлить до декабря
+              </label>
+            )}
+          </div>
+        ))}
       </div>
-      <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 15 }}>
+      <div className="form-group" style={{ marginTop: 12 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={form.is_raise ?? false}
+            onChange={(e) => setForm({ ...form, is_raise: e.target.checked })}
+          />
+          <span>Повышение</span>
+        </label>
+        <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>Месяц будет отмечен зелёным в таблице как месяц, с которого повышение.</div>
+      </div>
+      {showExtend && (
+        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-3)' }}>
+          Галочка «Продлить до декабря» — это значение будет подставлено с {MONTHS[month - 1]} по декабрь ({restMonthsCount} мес.), остальные компоненты в тех месяцах не меняются.
+        </div>
+      )}
+      <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 15, marginTop: 12 }}>
         Итого: {fmt(total)} ₽
       </div>
     </Modal>

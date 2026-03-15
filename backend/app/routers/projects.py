@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import Employee, EmployeeProject, Project, User
+from app.models import AssignmentMonthRate, Employee, EmployeeProject, Project, User
 from app.schemas.employee import AssignmentOut, EmployeeListItem
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate, ProjectWithStats
-from app.services.calc import get_project_budget_summary
+from app.services.calc import get_employee_month_total_rate, get_project_budget_summary
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -137,6 +137,7 @@ def delete_project(
 @router.get("/{project_id}/employees")
 def get_project_employees(
     project_id: uuid.UUID,
+    year: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -151,10 +152,25 @@ def get_project_employees(
         .all()
     )
 
+    # Load monthly overrides for the given year if requested
+    year_overrides: dict[uuid.UUID, dict[int, float]] = {}
+    if year is not None:
+        overrides = (
+            db.query(AssignmentMonthRate)
+            .filter(
+                AssignmentMonthRate.assignment_id.in_([a.id for a in assignments]),
+                AssignmentMonthRate.year == year,
+            )
+            .all()
+        )
+        for o in overrides:
+            year_overrides.setdefault(o.assignment_id, {})[o.month] = float(o.rate)
+
     result = []
+    default_rate_by_asgn = {a.id: float(a.rate) for a in assignments}
     for asgn in assignments:
         emp = asgn.employee
-        result.append({
+        row = {
             "assignment_id": str(asgn.id),
             "employee_id": str(emp.id),
             "display_name": emp.display_name,
@@ -167,7 +183,16 @@ def get_project_employees(
             "valid_to": asgn.valid_to.isoformat() if asgn.valid_to else None,
             "hire_date": emp.hire_date.isoformat() if emp.hire_date else None,
             "termination_date": emp.termination_date.isoformat() if emp.termination_date else None,
-        })
+        }
+        if year is not None:
+            row["monthly_rates"] = [
+                year_overrides.get(asgn.id, {}).get(m, default_rate_by_asgn[asgn.id])
+                for m in range(1, 13)
+            ]
+            row["monthly_total_rates"] = [
+                get_employee_month_total_rate(db, emp.id, year, m) for m in range(1, 13)
+            ]
+        result.append(row)
 
     return result
 
