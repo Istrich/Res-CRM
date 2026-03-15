@@ -119,6 +119,7 @@ npm run dev
 - **Секреты** — не коммитить .env, токены, пароли.
 - **Код** — явная обработка ошибок, без голых except. Логи без секретов. Для нового кода — docstrings, читаемые имена, типы по ситуации.
 - **Фронт** — кнопки, не отправляющие форму, с `type="button"`. TanStack Query v5: invalidateQueries({ queryKey: [...] }). Подтверждения удаления через компонент Confirm с loading.
+- **Production:** в .env задать `CORS_ORIGINS` (не `*`). Токен в localStorage уязвим к XSS; для production предпочтительны HttpOnly cookies (требует доработки бэкенда).
 
 ---
 
@@ -139,10 +140,17 @@ npm run dev
 
 ---
 
+## 7.1. Правила расчёта (is_forecast, one_time_bonus)
+
+- **is_forecast:** месяц считается **фактом** только если он полностью в прошлом (строго до текущего месяца). Текущий месяц и будущие — **прогноз** (is_forecast=True). Формула: `(year > today.year) or (year == today.year and month >= today.month)` → forecast.
+- **one_time_bonus:** при fallback зарплаты (нет записи за месяц — берётся предыдущая) разовая премия **не переносится** (в расчёте cost за такой месяц one_time_bonus=0).
+
+---
+
 ## 8. Краткая шпаргалка по API
 
 - **Auth:** POST /auth/login, GET /auth/me.
-- **Employees:** GET/POST /employees, GET/PATCH/DELETE /employees/:id, GET/PUT/DELETE /employees/:id/salary/:year/:month, POST /employees/import, POST /employees/import/excel, DELETE /employees/all (отладка).
+- **Employees:** GET/POST /employees, GET/PATCH/DELETE /employees/:id, GET/PUT/DELETE /employees/:id/salary/:year/:month, POST /employees/import, POST /employees/import/excel, DELETE /employees/all (только при DEBUG_MODE=true).
 - **Projects:** GET/POST /projects, GET/PATCH/DELETE /projects/:id, GET /projects/:id/employees?year=, DELETE /projects/:id/employees/:assignmentId.
 - **Assignments:** POST /assignments, PATCH/DELETE /assignments/:id, PUT /assignments/:id/rates/:year/:month.
 - **Budget projects:** GET/POST /budget-projects, GET/PATCH/DELETE /budget-projects/:id.

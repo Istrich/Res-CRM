@@ -6,6 +6,7 @@ import { useYearStore } from '../store/year'
 import { MONTHS, fmt, fmtDate, downloadBlob } from '../utils'
 import Modal from '../components/ui/Modal'
 import Confirm from '../components/ui/Confirm'
+import EmployeeForm from '../components/EmployeeForm'
 
 const EMPTY_FORM = {
   is_position: false, first_name: '', last_name: '', middle_name: '',
@@ -213,7 +214,6 @@ export default function EmployeesPage() {
   const [importSuccessMessage, setImportSuccessMessage] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteAllConfirm, setDeleteAllConfirm] = useState(false)
-  const [form, setForm] = useState(EMPTY_FORM)
   const [formError, setFormError] = useState('')
 
   const { data: employees = [], isLoading } = useQuery({
@@ -230,7 +230,7 @@ export default function EmployeesPage() {
       }
       return createEmployee(payload)
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setShowModal(false); setForm(EMPTY_FORM) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setShowModal(false); setFormError('') },
     onError: (e) => {
       const d = e.response?.data?.detail
       const msg = Array.isArray(d) ? d.map((x) => x.msg || x.loc?.join('.')).join(', ') : (d || 'Ошибка')
@@ -320,7 +320,7 @@ export default function EmployeesPage() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button type="button" className="btn btn-secondary btn-sm" onClick={handleExport}>⬇ Excel</button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setImportModal(true); setImportPaste(''); setImportParsed(null); setImportError('') }}>📥 Импорт</button>
-          <button type="button" className="btn btn-primary" onClick={() => { setForm(EMPTY_FORM); setFormError(''); setShowModal(true) }}>+ Добавить</button>
+          <button type="button" className="btn btn-primary" onClick={() => { setFormError(''); setShowModal(true) }}>+ Добавить</button>
           <button
             type="button"
             className="btn btn-danger btn-sm"
@@ -398,17 +398,15 @@ export default function EmployeesPage() {
         <Modal
           title="Новый сотрудник / позиция"
           onClose={() => { setShowModal(false); setFormError('') }}
-          footer={
-            <>
-              <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Отмена</button>
-              <button type="button" className="btn btn-primary" onClick={() => createMut.mutate(form)} disabled={createMut.isPending}>
-                {createMut.isPending ? <span className="spinner" /> : 'Создать'}
-              </button>
-            </>
-          }
+          footer={<button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Отмена</button>}
         >
           {formError && <div className="alert alert-error">{formError}</div>}
-          <EmployeeForm form={form} setForm={setForm} />
+          <EmployeeForm
+            initial={EMPTY_FORM}
+            onSubmit={(payload) => createMut.mutate(payload)}
+            loading={createMut.isPending}
+            submitLabel="Создать"
+          />
         </Modal>
       )}
 
@@ -517,55 +515,5 @@ function EmployeeRow({ emp, year, onOpen, onDelete }) {
         <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={(e) => { e.stopPropagation(); onDelete() }}>🗑</button>
       </td>
     </tr>
-  )
-}
-
-export function EmployeeForm({ form, setForm }) {
-  const safeForm = form || EMPTY_FORM
-  const f = (field) => (e) => setForm({ ...safeForm, [field]: e.target.value })
-  return (
-    <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
-          <input type="checkbox" checked={safeForm.is_position} onChange={e => setForm({ ...safeForm, is_position: e.target.checked })} />
-          Это позиция (вакансия)
-        </label>
-      </div>
-      {!safeForm.is_position && (
-        <div className="grid-3">
-          <div className="form-group"><label className="label">Фамилия</label><input className="input" value={safeForm.last_name} onChange={f('last_name')} /></div>
-          <div className="form-group"><label className="label">Имя</label><input className="input" value={safeForm.first_name} onChange={f('first_name')} /></div>
-          <div className="form-group"><label className="label">Отчество</label><input className="input" value={safeForm.middle_name} onChange={f('middle_name')} /></div>
-        </div>
-      )}
-      <div className="grid-2">
-        <div className="form-group">
-          <label className="label">Должность *</label>
-          <input className="input" value={safeForm.title} onChange={f('title')} required />
-        </div>
-        <div className="form-group">
-          <label className="label">Подразделение</label>
-          <input className="input" value={safeForm.department} onChange={f('department')} />
-        </div>
-      </div>
-      <div className="form-group">
-        <label className="label">Специализация</label>
-        <input className="input" value={safeForm.specialization} onChange={f('specialization')} />
-      </div>
-      <div className="grid-2">
-        <div className="form-group">
-          <label className="label">Дата найма</label>
-          <input className="input" type="date" value={safeForm.hire_date} onChange={f('hire_date')} />
-        </div>
-        <div className="form-group">
-          <label className="label">Дата увольнения</label>
-          <input className="input" type="date" value={safeForm.termination_date} onChange={f('termination_date')} />
-        </div>
-      </div>
-      <div className="form-group">
-        <label className="label">Комментарий</label>
-        <textarea className="input" rows={2} value={safeForm.comment} onChange={f('comment')} />
-      </div>
-    </>
   )
 }

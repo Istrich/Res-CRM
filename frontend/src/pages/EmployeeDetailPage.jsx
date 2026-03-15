@@ -11,7 +11,7 @@ import { useYearStore } from '../store/year'
 import { MONTHS, fmt, fmtDate } from '../utils'
 import Modal from '../components/ui/Modal'
 import Confirm from '../components/ui/Confirm'
-import { EmployeeForm } from './EmployeesPage'
+import EmployeeForm from '../components/EmployeeForm'
 
 export default function EmployeeDetailPage() {
   const { id } = useParams()
@@ -254,15 +254,15 @@ export default function EmployeeDetailPage() {
           title="Редактировать"
           onClose={() => setEditModal(false)}
           footer={
-            <>
-              <button type="button" className="btn btn-secondary" onClick={() => setEditModal(false)}>Отмена</button>
-              <button type="button" className="btn btn-primary" onClick={() => updateMut.mutate(editForm)} disabled={updateMut.isPending}>
-                {updateMut.isPending ? <span className="spinner" /> : 'Сохранить'}
-              </button>
-            </>
+            <button type="button" className="btn btn-secondary" onClick={() => setEditModal(false)}>Отмена</button>
           }
         >
-          <EmployeeForm form={editForm} setForm={setEditForm} />
+          <EmployeeForm
+            initial={editForm}
+            onSubmit={(payload) => updateMut.mutate(payload)}
+            loading={updateMut.isPending}
+            submitLabel="Сохранить"
+          />
         </Modal>
       )}
 

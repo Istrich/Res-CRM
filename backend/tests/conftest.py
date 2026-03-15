@@ -157,12 +157,13 @@ def make_assignment(db):
 
 @pytest.fixture
 def make_salary(db):
-    def _make(employee, year=2024, month=1, salary=100_000, kpi=10_000, fixed=5_000, one_time=0):
+    def _make(employee, year=2024, month=1, salary=100_000, kpi=10_000, fixed=5_000, one_time=0, is_raise=False):
         rec = SalaryRecord(
             employee_id=employee.id,
             year=year, month=month,
             salary=salary, kpi_bonus=kpi,
             fixed_bonus=fixed, one_time_bonus=one_time,
+            is_raise=is_raise,
         )
         db.add(rec)
         db.commit()

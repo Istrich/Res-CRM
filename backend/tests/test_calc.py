@@ -124,8 +124,9 @@ class TestGetSalaryForMonth:
         rec = make_salary(emp, year=2024, month=6, salary=120_000)
         make_salary(emp, year=2024, month=3, salary=100_000)
 
-        result = get_salary_for_month(db, emp.id, 2024, 6)
+        result, is_exact = get_salary_for_month(db, emp.id, 2024, 6)
         assert result is not None
+        assert is_exact is True
         assert float(result.salary) == 120_000
 
     def test_fallback_to_earlier_same_year(self, db, make_employee, make_salary):
@@ -134,8 +135,9 @@ class TestGetSalaryForMonth:
         make_salary(emp, year=2024, month=4, salary=110_000)
 
         # Month 7 has no record — should get April (most recent before July)
-        result = get_salary_for_month(db, emp.id, 2024, 7)
+        result, is_exact = get_salary_for_month(db, emp.id, 2024, 7)
         assert result is not None
+        assert is_exact is False
         assert float(result.salary) == 110_000
 
     def test_fallback_picks_most_recent(self, db, make_employee, make_salary):
@@ -144,15 +146,17 @@ class TestGetSalaryForMonth:
         make_salary(emp, year=2024, month=3, salary=100_000)
         make_salary(emp, year=2024, month=6, salary=110_000)
 
-        result = get_salary_for_month(db, emp.id, 2024, 9)
+        result, is_exact = get_salary_for_month(db, emp.id, 2024, 9)
+        assert is_exact is False
         assert float(result.salary) == 110_000
 
     def test_fallback_to_previous_year(self, db, make_employee, make_salary):
         emp = make_employee()
         make_salary(emp, year=2023, month=12, salary=95_000)
 
-        result = get_salary_for_month(db, emp.id, 2024, 3)
+        result, is_exact = get_salary_for_month(db, emp.id, 2024, 3)
         assert result is not None
+        assert is_exact is False
         assert float(result.salary) == 95_000
 
     def test_fallback_previous_year_most_recent(self, db, make_employee, make_salary):
@@ -160,19 +164,22 @@ class TestGetSalaryForMonth:
         make_salary(emp, year=2022, month=6, salary=80_000)
         make_salary(emp, year=2023, month=9, salary=90_000)
 
-        result = get_salary_for_month(db, emp.id, 2024, 1)
+        result, is_exact = get_salary_for_month(db, emp.id, 2024, 1)
+        assert is_exact is False
         assert float(result.salary) == 90_000
 
     def test_no_records_returns_none(self, db, make_employee):
         emp = make_employee()
-        result = get_salary_for_month(db, emp.id, 2024, 6)
+        result, is_exact = get_salary_for_month(db, emp.id, 2024, 6)
         assert result is None
+        assert is_exact is False
 
     def test_future_month_fallback(self, db, make_employee, make_salary):
         emp = make_employee()
         make_salary(emp, year=2024, month=6, salary=120_000)
 
-        result = get_salary_for_month(db, emp.id, 2024, 12)
+        result, is_exact = get_salary_for_month(db, emp.id, 2024, 12)
+        assert is_exact is False
         assert float(result.salary) == 120_000
 
 
@@ -219,9 +226,20 @@ class TestCalcEmployeeMonthCost:
         emp = make_employee()
         make_salary(emp, year=2024, month=1, salary=100_000, kpi=5_000, fixed=0, one_time=0)
 
-        # Month 6 has no record — uses January
+        # Month 6 has no record — uses January (salary+kpi only)
         cost = calc_employee_month_cost(db, emp, 2024, 6)
         assert cost == 105_000
+
+    def test_fallback_does_not_carry_one_time_bonus(self, db, make_employee, make_salary):
+        """one_time_bonus does NOT carry forward: Jan has 50k bonus, Feb has no record → Feb cost without 50k."""
+        emp = make_employee()
+        make_salary(emp, year=2024, month=1, salary=100_000, kpi=0, fixed=0, one_time=50_000)
+
+        cost_jan = calc_employee_month_cost(db, emp, 2024, 1)
+        assert cost_jan == 150_000
+
+        cost_feb = calc_employee_month_cost(db, emp, 2024, 2)
+        assert cost_feb == 100_000  # fallback: salary only, no one_time_bonus
 
     def test_one_time_bonus_included(self, db, make_employee, make_salary):
         emp = make_employee()
@@ -344,6 +362,7 @@ class TestRecalculateYear:
 
     @freeze_time("2024-06-15")
     def test_past_months_not_forecast(self, db, full_setup):
+        """Months fully in the past (before current month) are fact, not forecast."""
         from app.models import BudgetSnapshot
         proj = full_setup["project"]
         recalculate_year(db, 2024)
@@ -354,6 +373,20 @@ class TestRecalculateYear:
             BudgetSnapshot.month == 1,
         ).first()
         assert jan.is_forecast is False
+
+    @freeze_time("2024-06-15")
+    def test_current_month_is_forecast(self, db, full_setup):
+        """Current month (June when today is 2024-06-15) is forecast — month not yet complete."""
+        from app.models import BudgetSnapshot
+        proj = full_setup["project"]
+        recalculate_year(db, 2024)
+
+        june = db.query(BudgetSnapshot).filter(
+            BudgetSnapshot.project_id == proj.id,
+            BudgetSnapshot.year == 2024,
+            BudgetSnapshot.month == 6,
+        ).first()
+        assert june.is_forecast is True
 
     @freeze_time("2024-06-15")
     def test_future_months_are_forecast(self, db, full_setup):

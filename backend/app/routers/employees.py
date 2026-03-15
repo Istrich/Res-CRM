@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.services.import_employees import parse_employee_excel
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import Employee, EmployeeProject, SalaryRecord, User
@@ -303,7 +304,9 @@ def delete_all_employees(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """Временный endpoint для отладки импорта: удаляет всех сотрудников и позиций."""
+    """Отладочный endpoint: удаляет всех сотрудников. Доступен только при DEBUG_MODE=true."""
+    if not settings.DEBUG_MODE:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     count = db.query(Employee).count()
     db.query(Employee).delete()
     db.commit()

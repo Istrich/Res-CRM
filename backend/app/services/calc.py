@@ -45,12 +45,13 @@ def employee_active_in_month(emp: Employee, year: int, month: int) -> bool:
     return True
 
 
-def get_salary_for_month(db: Session, employee_id, year: int, month: int) -> SalaryRecord | None:
+def get_salary_for_month(db: Session, employee_id, year: int, month: int) -> tuple[SalaryRecord | None, bool]:
     """
-    Return salary record for the exact month, or fall back to the most recent
-    record before that month (within the same year, then previous years).
+    Return (salary record, is_exact).
+    Exact month first; else fallback to most recent before that month (same year, then previous years).
+    is_exact is True only when there is a record for the requested (year, month).
+    Business rule: one_time_bonus does NOT carry forward on fallback — use is_exact in cost calc.
     """
-    # Exact match first
     exact = (
         db.query(SalaryRecord)
         .filter(
@@ -61,9 +62,8 @@ def get_salary_for_month(db: Session, employee_id, year: int, month: int) -> Sal
         .first()
     )
     if exact:
-        return exact
+        return exact, True
 
-    # Most recent before this month (same year)
     prev_same_year = (
         db.query(SalaryRecord)
         .filter(
@@ -75,9 +75,8 @@ def get_salary_for_month(db: Session, employee_id, year: int, month: int) -> Sal
         .first()
     )
     if prev_same_year:
-        return prev_same_year
+        return prev_same_year, False
 
-    # Most recent in previous years
     prev_year = (
         db.query(SalaryRecord)
         .filter(
@@ -87,7 +86,7 @@ def get_salary_for_month(db: Session, employee_id, year: int, month: int) -> Sal
         .order_by(SalaryRecord.year.desc(), SalaryRecord.month.desc())
         .first()
     )
-    return prev_year
+    return (prev_year, False) if prev_year else (None, False)
 
 
 def get_assignments_for_month(db: Session, employee_id, year: int, month: int) -> list[EmployeeProject]:
@@ -128,15 +127,16 @@ def get_employee_month_total_rate(db: Session, employee_id, year: int, month: in
 
 
 def calc_employee_month_cost(db: Session, emp: Employee, year: int, month: int) -> float:
-    """Total compensation for employee in given month (gross)."""
+    """Total compensation for employee in given month (gross). one_time_bonus does not carry forward on fallback."""
     if not employee_active_in_month(emp, year, month):
         return 0.0
 
-    rec = get_salary_for_month(db, emp.id, year, month)
+    rec, is_exact = get_salary_for_month(db, emp.id, year, month)
     if not rec:
         return 0.0
 
-    return float(rec.salary) + float(rec.kpi_bonus) + float(rec.fixed_bonus) + float(rec.one_time_bonus)
+    one_time = float(rec.one_time_bonus) if is_exact else 0.0
+    return float(rec.salary) + float(rec.kpi_bonus) + float(rec.fixed_bonus) + one_time
 
 
 def calc_project_month_cost(db: Session, project_id, year: int, month: int) -> float:
@@ -179,42 +179,46 @@ def recalculate_year(db: Session, year: int) -> dict:
     """
     Recalculate all budget snapshots for a given year.
     Returns summary dict with counts.
+    Uses no_autoflush in the loop to avoid partial flush on large volumes.
     """
     today = date.today()
     projects = db.query(Project).all()
     updated = 0
 
-    for project in projects:
-        for month in range(1, 13):
-            amount = calc_project_month_cost(db, project.id, year, month)
-            is_forecast = date(year, month, 1) > today
+    with db.no_autoflush:
+        for project in projects:
+            for month in range(1, 13):
+                amount = calc_project_month_cost(db, project.id, year, month)
+                # Month is "fact" only when fully in the past; current and future months = forecast
+                is_forecast = (year > today.year) or (year == today.year and month >= today.month)
 
-            existing = (
-                db.query(BudgetSnapshot)
-                .filter(
-                    BudgetSnapshot.project_id == project.id,
-                    BudgetSnapshot.year == year,
-                    BudgetSnapshot.month == month,
+                existing = (
+                    db.query(BudgetSnapshot)
+                    .filter(
+                        BudgetSnapshot.project_id == project.id,
+                        BudgetSnapshot.year == year,
+                        BudgetSnapshot.month == month,
+                    )
+                    .first()
                 )
-                .first()
-            )
 
-            if existing:
-                existing.amount = amount
-                existing.is_forecast = is_forecast
-                existing.calculated_at = datetime.now(timezone.utc)
-            else:
-                snapshot = BudgetSnapshot(
-                    project_id=project.id,
-                    year=year,
-                    month=month,
-                    amount=amount,
-                    is_forecast=is_forecast,
-                )
-                db.add(snapshot)
+                if existing:
+                    existing.amount = amount
+                    existing.is_forecast = is_forecast
+                    existing.calculated_at = datetime.now(timezone.utc)
+                else:
+                    snapshot = BudgetSnapshot(
+                        project_id=project.id,
+                        year=year,
+                        month=month,
+                        amount=amount,
+                        is_forecast=is_forecast,
+                    )
+                    db.add(snapshot)
 
-            updated += 1
+                updated += 1
 
+    db.flush()
     db.commit()
     return {"year": year, "projects_updated": len(projects), "snapshots_updated": updated}
 

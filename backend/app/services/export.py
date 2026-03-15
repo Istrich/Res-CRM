@@ -237,14 +237,15 @@ def export_payroll(db: Session, year: int) -> io.BytesIO:
 
             if cost > 0:
                 from app.services.calc import get_salary_for_month
-                rec = get_salary_for_month(db, emp.id, year, month)
+                rec, is_exact = get_salary_for_month(db, emp.id, year, month)
                 if rec:
+                    one_time = float(rec.one_time_bonus) if is_exact else 0
                     ws2.append([
                         emp.display_name, emp.title, emp.department or "",
                         year, month,
                         float(rec.salary), float(rec.kpi_bonus),
-                        float(rec.fixed_bonus), float(rec.one_time_bonus),
-                        rec.total,
+                        float(rec.fixed_bonus), one_time,
+                        float(rec.salary) + float(rec.kpi_bonus) + float(rec.fixed_bonus) + one_time,
                     ])
                     detail_row += 1
 
