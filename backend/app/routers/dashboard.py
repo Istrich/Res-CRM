@@ -1,11 +1,12 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import distinct, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import BudgetSnapshot, Employee, EmployeeProject, Project, User
+from app.models import BudgetProject, BudgetSnapshot, Employee, EmployeeProject, Project, SalaryRecord, User
 from app.services.calc import calc_employee_month_cost, employee_active_in_month
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -30,7 +31,6 @@ def summary(
     )
 
     # Monthly spend from snapshots (fast path)
-    from sqlalchemy import func
     monthly_rows = (
         db.query(BudgetSnapshot.month, func.sum(BudgetSnapshot.amount))
         .filter(BudgetSnapshot.year == year)
@@ -59,7 +59,6 @@ def by_project(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    from sqlalchemy import func
     rows = (
         db.query(
             BudgetSnapshot.project_id,
@@ -72,7 +71,7 @@ def by_project(
 
     result = []
     for row in rows:
-        proj = db.query(Project).get(row.project_id)
+        proj = db.get(Project, row.project_id)
         if proj:
             result.append({
                 "project_id": str(proj.id),
@@ -150,14 +149,6 @@ def movements(
         active = []
 
         for emp in employees:
-            ms = date(year, month, 1)
-            if month == 12:
-                me = date(year, 12, 31)
-            else:
-                me = date(year, month + 1, 1).__class__(year, month + 1, 1)
-                import datetime
-                me = me - datetime.timedelta(days=1)
-
             # Hired this month
             if emp.hire_date and emp.hire_date.year == year and emp.hire_date.month == month:
                 hired.append({"id": str(emp.id), "name": emp.display_name})
@@ -192,9 +183,6 @@ def available_years(
     _: User = Depends(get_current_user),
 ):
     """Return all years that have data."""
-    from sqlalchemy import distinct
-    from app.models import BudgetProject, SalaryRecord
-
     salary_years = [r[0] for r in db.query(distinct(SalaryRecord.year)).all()]
     bp_years = [r[0] for r in db.query(distinct(BudgetProject.year)).all()]
     snapshot_years = [r[0] for r in db.query(distinct(BudgetSnapshot.year)).all()]

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -27,8 +27,11 @@ export default function ProjectDetailPage() {
   const { data: project } = useQuery({
     queryKey: ['project', id, year],
     queryFn: () => getProject(id, { year }),
-    onSuccess: (d) => { if (!editForm) setEditForm({ name: d.name, budget_project_id: d.budget_project_id || '' }) },
   })
+
+  useEffect(() => {
+    if (project && !editForm) setEditForm({ name: project.name, budget_project_id: project.budget_project_id || '' })
+  }, [project])
 
   const { data: members = [] } = useQuery({
     queryKey: ['project-employees', id],

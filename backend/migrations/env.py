@@ -15,6 +15,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Prefer DATABASE_URL from environment (e.g. Docker: db:5432)
+database_url = os.environ.get("DATABASE_URL")
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
+
 target_metadata = Base.metadata
 
 

@@ -172,6 +172,17 @@ ADMIN_PASSWORD=admin123
 
 ---
 
+## Workflow и агенты
+
+Для разработки задан обязательный воркфлоу и набор ролей (агентов):
+
+- **Воркфлоу:** [docs/WORKFLOW.md](docs/WORKFLOW.md) — порядок этапов (Architect → Implementer → Tester → Guardian → Documenter), обязательное создание тестов на все изменения поведения.
+- **Агенты:** [docs/AGENTS.md](docs/AGENTS.md) — список ролей и ссылки на детальные инструкции в `docs/agents/` и `.claude/agents/`.
+
+Планы изменений: `docs/plans/YYYY-MM-DD-<slug>.md`.
+
+---
+
 ## Расширение системы
 
 **Импорт из Excel** — следующий этап. Endpoint: `POST /imports/employees/preview` + `/commit`.

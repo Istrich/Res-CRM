@@ -32,14 +32,25 @@ export default function EmployeesPage() {
   })
 
   const createMut = useMutation({
-    mutationFn: createEmployee,
-    onSuccess: () => { qc.invalidateQueries(['employees']); setShowModal(false); setForm(EMPTY_FORM) },
-    onError: (e) => setFormError(e.response?.data?.detail || 'Ошибка'),
+    mutationFn: (data) => {
+      const payload = {
+        ...data,
+        hire_date: data.hire_date?.trim() || null,
+        termination_date: data.termination_date?.trim() || null,
+      }
+      return createEmployee(payload)
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setShowModal(false); setForm(EMPTY_FORM) },
+    onError: (e) => {
+      const d = e.response?.data?.detail
+      const msg = Array.isArray(d) ? d.map((x) => x.msg || x.loc?.join('.')).join(', ') : (d || 'Ошибка')
+      setFormError(msg)
+    },
   })
 
   const deleteMut = useMutation({
     mutationFn: deleteEmployee,
-    onSuccess: () => { qc.invalidateQueries(['employees']); setDeleteTarget(null) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setDeleteTarget(null) },
   })
 
   const handleExport = async () => {
@@ -60,7 +71,7 @@ export default function EmployeesPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-secondary btn-sm" onClick={handleExport}>⬇ Excel</button>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Добавить</button>
+          <button className="btn btn-primary" onClick={() => { setForm(EMPTY_FORM); setFormError(''); setShowModal(true) }}>+ Добавить</button>
         </div>
       </div>
 
@@ -210,49 +221,50 @@ function EmployeeRow({ emp, year, onOpen, onDelete }) {
 }
 
 export function EmployeeForm({ form, setForm }) {
-  const f = (field) => (e) => setForm({ ...form, [field]: e.target.value })
+  const safeForm = form || EMPTY_FORM
+  const f = (field) => (e) => setForm({ ...safeForm, [field]: e.target.value })
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
-          <input type="checkbox" checked={form.is_position} onChange={e => setForm({ ...form, is_position: e.target.checked })} />
+          <input type="checkbox" checked={safeForm.is_position} onChange={e => setForm({ ...safeForm, is_position: e.target.checked })} />
           Это позиция (вакансия)
         </label>
       </div>
-      {!form.is_position && (
+      {!safeForm.is_position && (
         <div className="grid-3">
-          <div className="form-group"><label className="label">Фамилия</label><input className="input" value={form.last_name} onChange={f('last_name')} /></div>
-          <div className="form-group"><label className="label">Имя</label><input className="input" value={form.first_name} onChange={f('first_name')} /></div>
-          <div className="form-group"><label className="label">Отчество</label><input className="input" value={form.middle_name} onChange={f('middle_name')} /></div>
+          <div className="form-group"><label className="label">Фамилия</label><input className="input" value={safeForm.last_name} onChange={f('last_name')} /></div>
+          <div className="form-group"><label className="label">Имя</label><input className="input" value={safeForm.first_name} onChange={f('first_name')} /></div>
+          <div className="form-group"><label className="label">Отчество</label><input className="input" value={safeForm.middle_name} onChange={f('middle_name')} /></div>
         </div>
       )}
       <div className="grid-2">
         <div className="form-group">
           <label className="label">Должность *</label>
-          <input className="input" value={form.title} onChange={f('title')} required />
+          <input className="input" value={safeForm.title} onChange={f('title')} required />
         </div>
         <div className="form-group">
           <label className="label">Подразделение</label>
-          <input className="input" value={form.department} onChange={f('department')} />
+          <input className="input" value={safeForm.department} onChange={f('department')} />
         </div>
       </div>
       <div className="form-group">
         <label className="label">Специализация</label>
-        <input className="input" value={form.specialization} onChange={f('specialization')} />
+        <input className="input" value={safeForm.specialization} onChange={f('specialization')} />
       </div>
       <div className="grid-2">
         <div className="form-group">
           <label className="label">Дата найма</label>
-          <input className="input" type="date" value={form.hire_date} onChange={f('hire_date')} />
+          <input className="input" type="date" value={safeForm.hire_date} onChange={f('hire_date')} />
         </div>
         <div className="form-group">
           <label className="label">Дата увольнения</label>
-          <input className="input" type="date" value={form.termination_date} onChange={f('termination_date')} />
+          <input className="input" type="date" value={safeForm.termination_date} onChange={f('termination_date')} />
         </div>
       </div>
       <div className="form-group">
         <label className="label">Комментарий</label>
-        <textarea className="input" rows={2} value={form.comment} onChange={f('comment')} />
+        <textarea className="input" rows={2} value={safeForm.comment} onChange={f('comment')} />
       </div>
     </>
   )

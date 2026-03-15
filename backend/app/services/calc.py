@@ -16,7 +16,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.models import BudgetSnapshot, Employee, EmployeeProject, Project, SalaryRecord
+from app.models import BudgetProject, BudgetSnapshot, Employee, EmployeeProject, Project, SalaryRecord
 
 
 def _month_start(year: int, month: int) -> date:
@@ -135,7 +135,7 @@ def calc_project_month_cost(db: Session, project_id, year: int, month: int) -> f
 
     total = 0.0
     for asgn in assignments:
-        emp = db.query(Employee).get(asgn.employee_id)
+        emp = db.get(Employee, asgn.employee_id)
         if emp is None:
             continue
         emp_cost = calc_employee_month_cost(db, emp, year, month)
@@ -201,7 +201,7 @@ def get_project_budget_summary(db: Session, project_id, year: int) -> dict:
     total_forecast = spent + forecast_months
 
     # Get budget from budget_project
-    project = db.query(Project).get(project_id)
+    project = db.get(Project, project_id)
     budget = None
     if project and project.budget_project:
         budget = float(project.budget_project.total_budget) if project.budget_project.total_budget else None
@@ -228,8 +228,7 @@ def get_project_budget_summary(db: Session, project_id, year: int) -> dict:
 
 def get_budget_project_summary(db: Session, budget_project_id, year: int) -> dict:
     """Aggregate budget summary across all projects in a budget project."""
-    from app.models import BudgetProject
-    bp = db.query(BudgetProject).get(budget_project_id)
+    bp = db.get(BudgetProject, budget_project_id)
     if not bp:
         return {}
 

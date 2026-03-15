@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -29,24 +29,25 @@ export default function EmployeeDetailPage() {
   const { data: emp, isLoading } = useQuery({
     queryKey: ['employee', id],
     queryFn: () => getEmployee(id),
-    onSuccess: (data) => {
-      if (!editForm) setEditForm({
-        first_name: data.first_name || '',
-        last_name: data.last_name || '',
-        middle_name: data.middle_name || '',
-        title: data.title || '',
-        department: data.department || '',
-        specialization: data.specialization || '',
-        comment: data.comment || '',
-        hire_date: data.hire_date || '',
-        termination_date: data.termination_date || '',
-      })
-    },
   })
+
+  useEffect(() => {
+    if (emp && !editForm) setEditForm({
+      first_name: emp.first_name || '',
+      last_name: emp.last_name || '',
+      middle_name: emp.middle_name || '',
+      title: emp.title || '',
+      department: emp.department || '',
+      specialization: emp.specialization || '',
+      comment: emp.comment || '',
+      hire_date: emp.hire_date || '',
+      termination_date: emp.termination_date || '',
+    })
+  }, [emp])
 
   const updateMut = useMutation({
     mutationFn: (data) => updateEmployee(id, data),
-    onSuccess: () => { qc.invalidateQueries(['employee', id]); setEditModal(false) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employee', id] }); setEditModal(false) },
   })
 
   const deleteMut = useMutation({
@@ -56,12 +57,12 @@ export default function EmployeeDetailPage() {
 
   const salarySaveMut = useMutation({
     mutationFn: ({ month, data }) => upsertSalary(id, year, month, data),
-    onSuccess: () => { qc.invalidateQueries(['employee', id]); setSalaryModal(null) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employee', id] }); setSalaryModal(null) },
   })
 
   const deleteAssignMut = useMutation({
     mutationFn: deleteAssignment,
-    onSuccess: () => qc.invalidateQueries(['employee', id]),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employee', id] }),
   })
 
   if (isLoading) return <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
