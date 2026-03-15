@@ -16,6 +16,7 @@ export const importEmployeesExcel = (file) => {
 }
 export const updateEmployee = (id, data) => api.patch(`/employees/${id}`, data).then(r => r.data)
 export const deleteEmployee = (id) => api.delete(`/employees/${id}`)
+export const deleteAllEmployees = () => api.delete('/employees/all').then(r => r.data)
 
 // Salary
 export const getSalary = (id, year) => api.get(`/employees/${id}/salary`, { params: { year } }).then(r => r.data)

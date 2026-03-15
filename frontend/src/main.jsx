@@ -15,6 +15,7 @@ import BudgetProjectsPage from './pages/BudgetProjectsPage'
 import BudgetProjectDetailPage from './pages/BudgetProjectDetailPage'
 import BudgetsPage from './pages/BudgetsPage'
 import DashboardPage from './pages/DashboardPage'
+import HiringPage from './pages/HiringPage'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -44,6 +45,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="employees" element={<EmployeesPage />} />
             <Route path="employees/:id" element={<EmployeeDetailPage />} />
+            <Route path="hiring" element={<HiringPage />} />
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="projects/:id" element={<ProjectDetailPage />} />
             <Route path="budget-projects" element={<BudgetProjectsPage />} />

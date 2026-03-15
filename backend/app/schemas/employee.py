@@ -156,6 +156,7 @@ class EmployeeListItem(BaseModel):
     assignments: list[AssignmentOut] = []
     has_projects: bool
     monthly_totals: Optional[list[float]] = None  # 12 values for the requested year (Jan..Dec)
+    monthly_is_raise: Optional[list[bool]] = None  # 12 values: True if that month is marked as raise
 
     class Config:
         from_attributes = True

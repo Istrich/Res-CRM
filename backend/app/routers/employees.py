@@ -64,9 +64,16 @@ def _build_employee_out(emp: Employee) -> EmployeeOut:
 def _build_list_item(emp: Employee, year: Optional[int] = None) -> EmployeeListItem:
     assignments = [_build_assignment_out(ep) for ep in emp.employee_projects]
     monthly_totals = None
+    monthly_is_raise = None
     if year is not None and hasattr(emp, "salary_records") and emp.salary_records is not None:
         by_month = {r.month: float(r.total) for r in emp.salary_records if r.year == year}
         monthly_totals = [by_month.get(m, 0.0) for m in range(1, 13)]
+        by_raise = {
+            r.month: getattr(r, "is_raise", False)
+            for r in emp.salary_records
+            if r.year == year
+        }
+        monthly_is_raise = [by_raise.get(m, False) for m in range(1, 13)]
     return EmployeeListItem(
         id=emp.id,
         is_position=emp.is_position,
@@ -79,6 +86,7 @@ def _build_list_item(emp: Employee, year: Optional[int] = None) -> EmployeeListI
         assignments=assignments,
         has_projects=len(emp.employee_projects) > 0,
         monthly_totals=monthly_totals,
+        monthly_is_raise=monthly_is_raise,
     )
 
 
@@ -91,6 +99,7 @@ def list_employees(
     search: Optional[str] = Query(None),
     year: Optional[int] = Query(None),
     include_terminated: bool = Query(True),
+    is_position: Optional[bool] = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -101,6 +110,8 @@ def list_employees(
         load_opts.append(joinedload(Employee.salary_records))
     q = db.query(Employee).options(*load_opts)
 
+    if is_position is not None:
+        q = q.filter(Employee.is_position == is_position)
     if title:
         q = q.filter(Employee.title.ilike(f"%{title}%"))
     if department:
@@ -269,6 +280,18 @@ def update_employee(
         .first()
     )
     return _build_employee_out(emp)
+
+
+@router.delete("/all")
+def delete_all_employees(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Временный endpoint для отладки импорта: удаляет всех сотрудников и позиций."""
+    count = db.query(Employee).count()
+    db.query(Employee).delete()
+    db.commit()
+    return {"deleted": count}
 
 
 @router.delete("/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)

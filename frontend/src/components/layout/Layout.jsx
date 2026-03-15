@@ -7,6 +7,7 @@ import { getAvailableYears } from '../../api'
 const NAV = [
   { to: '/dashboard', icon: '📊', label: 'Дашборд' },
   { to: '/employees', icon: '👥', label: 'Сотрудники' },
+  { to: '/hiring', icon: '📋', label: 'Найм' },
   { to: '/projects', icon: '📁', label: 'Проекты' },
   { to: '/budget-projects', icon: '💼', label: 'Бюджетные проекты' },
   { to: '/budgets', icon: '💰', label: 'Бюджеты' },

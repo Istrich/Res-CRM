@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getEmployees, createEmployee, deleteEmployee, exportEmployees, importEmployees, importEmployeesExcel } from '../api'
+import { getEmployees, createEmployee, deleteEmployee, deleteAllEmployees, exportEmployees, importEmployees, importEmployeesExcel } from '../api'
 import { useYearStore } from '../store/year'
 import { MONTHS, fmt, fmtDate, downloadBlob } from '../utils'
 import Modal from '../components/ui/Modal'
@@ -66,7 +66,15 @@ function parseImportTable(text) {
   return { rows, error: null }
 }
 
-function ImportModal({ paste, setPaste, parsed, setParsed, error, setError, onImport, onImportExcel, onClose, loading, loadingExcel }) {
+function formatApiError(detail) {
+  if (detail == null) return 'Ошибка запроса'
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) return detail.map((x) => x.msg || x.loc?.join('.') || JSON.stringify(x)).join('; ')
+  return String(detail)
+}
+
+function ImportModal({ paste, setPaste, parsed, setParsed, error, setError, successMessage, onImport, onImportExcel, onClose, loading, loadingExcel }) {
+  const fileInputRef = useRef(null)
   const handleParse = () => {
     const { rows, error: err } = parseImportTable(paste)
     setParsed(err ? null : rows)
@@ -76,6 +84,7 @@ function ImportModal({ paste, setPaste, parsed, setParsed, error, setError, onIm
     const file = e.target.files?.[0]
     if (file) onImportExcel(file)
     e.target.value = ''
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
   return (
     <Modal
@@ -83,23 +92,44 @@ function ImportModal({ paste, setPaste, parsed, setParsed, error, setError, onIm
       onClose={onClose}
       wide
       footer={
-        <>
-          <button className="btn btn-secondary" onClick={onClose}>Отмена</button>
-          {parsed ? (
-            <button className="btn btn-primary" onClick={onImport} disabled={loading || parsed.length === 0}>
-              {loading ? <span className="spinner" /> : `Импортировать ${parsed.length} записей`}
-            </button>
-          ) : (
-            <button className="btn btn-primary" onClick={handleParse}>Проверить и показать превью</button>
-          )}
-        </>
+        successMessage ? (
+          <button className="btn btn-primary" onClick={onClose}>Закрыть</button>
+        ) : (
+          <>
+            <button className="btn btn-secondary" onClick={onClose}>Отмена</button>
+            {parsed ? (
+              <button className="btn btn-primary" onClick={onImport} disabled={loading || parsed.length === 0}>
+                {loading ? <span className="spinner" /> : `Импортировать ${parsed.length} записей`}
+              </button>
+            ) : (
+              <button className="btn btn-primary" onClick={handleParse}>Проверить и показать превью</button>
+            )}
+          </>
+        )
       }
     >
+      {successMessage && (
+        <div className="alert alert-success" style={{ marginBottom: 16 }}>
+          {successMessage}
+        </div>
+      )}
+      {error && (
+        <div className="alert alert-error" style={{ marginBottom: 16 }}>
+          {error}
+        </div>
+      )}
       <div style={{ marginBottom: 16 }}>
         <div className="fw-600" style={{ marginBottom: 6 }}>Файл Excel (.xlsx)</div>
         <label className="btn btn-secondary btn-sm" style={{ cursor: loadingExcel ? 'not-allowed' : 'pointer' }}>
           {loadingExcel ? <span className="spinner" /> : 'Выбрать файл и импортировать'}
-          <input type="file" accept=".xlsx,.xls" onChange={handleFileChange} disabled={loadingExcel} style={{ display: 'none' }} />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleFileChange}
+            disabled={loadingExcel}
+            style={{ display: 'none' }}
+          />
         </label>
         <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6 }}>Первая строка — заголовки: {IMPORT_HEADERS.join(', ')}.</p>
       </div>
@@ -116,7 +146,6 @@ function ImportModal({ paste, setPaste, parsed, setParsed, error, setError, onIm
         onChange={(e) => setPaste(e.target.value)}
         style={{ width: '100%', fontFamily: 'monospace', fontSize: 12 }}
       />
-      {error && <div className="alert alert-error" style={{ marginTop: 8 }}>{error}</div>}
       {parsed != null && parsed.length > 0 && (
         <div style={{ marginTop: 16 }}>
           <div className="fw-600" style={{ marginBottom: 8 }}>Превью ({parsed.length} строк)</div>
@@ -166,7 +195,9 @@ export default function EmployeesPage() {
   const [importPaste, setImportPaste] = useState('')
   const [importParsed, setImportParsed] = useState(null)
   const [importError, setImportError] = useState('')
+  const [importSuccessMessage, setImportSuccessMessage] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleteAllConfirm, setDeleteAllConfirm] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [formError, setFormError] = useState('')
 
@@ -197,19 +228,34 @@ export default function EmployeesPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setDeleteTarget(null) },
   })
 
+  const deleteAllMut = useMutation({
+    mutationFn: deleteAllEmployees,
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['employees', 'positions'] })
+      setDeleteAllConfirm(false)
+      const n = res?.deleted ?? 0
+      alert(`Удалено записей: ${n}`)
+    },
+    onError: (e) => {
+      alert(formatApiError(e.response?.data?.detail) || 'Ошибка')
+    },
+  })
+
   const importMut = useMutation({
     mutationFn: importEmployees,
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['employees'] })
-      setImportModal(false)
+      qc.invalidateQueries({ queryKey: ['employees', 'positions'] })
       setImportPaste('')
       setImportParsed(null)
       setImportError('')
-      alert(`Импортировано: ${res.created} записей. Пропущено (пустая должность): ${res.skipped}`)
+      const created = res?.created ?? 0
+      const skipped = res?.skipped ?? 0
+      setImportSuccessMessage(`Импортировано: ${created} записей. Пропущено (пустая должность): ${skipped}.`)
     },
     onError: (e) => {
-      const d = e.response?.data?.detail
-      setImportError(Array.isArray(d) ? d.map((x) => x.msg || x.loc?.join('.')).join(', ') : (d || 'Ошибка'))
+      setImportError(formatApiError(e.response?.data?.detail) || 'Ошибка')
     },
   })
 
@@ -217,14 +263,25 @@ export default function EmployeesPage() {
     mutationFn: importEmployeesExcel,
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['employees'] })
-      setImportModal(false)
+      qc.invalidateQueries({ queryKey: ['employees', 'positions'] })
       setImportError('')
-      alert(`Импорт из Excel: создано ${res.created} записей, пропущено ${res.skipped}.`)
+      const created = res?.created ?? 0
+      const skipped = res?.skipped ?? 0
+      setImportSuccessMessage(`Импорт из Excel: создано ${created} записей, пропущено ${skipped}.`)
     },
     onError: (e) => {
-      setImportError(e.response?.data?.detail || 'Ошибка загрузки файла')
+      const detail = e.response?.data?.detail
+      setImportError(formatApiError(detail) || 'Ошибка загрузки файла')
     },
   })
+
+  const closeImportModal = () => {
+    setImportModal(false)
+    setImportPaste('')
+    setImportParsed(null)
+    setImportError('')
+    setImportSuccessMessage(null)
+  }
 
   const handleExport = async () => {
     const blob = await exportEmployees(year)
@@ -242,10 +299,19 @@ export default function EmployeesPage() {
           <div className="page-title">Сотрудники и позиции</div>
           <div className="page-subtitle">{employees.length} записей</div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button className="btn btn-secondary btn-sm" onClick={handleExport}>⬇ Excel</button>
           <button className="btn btn-secondary btn-sm" onClick={() => { setImportModal(true); setImportPaste(''); setImportParsed(null); setImportError('') }}>📥 Импорт</button>
           <button className="btn btn-primary" onClick={() => { setForm(EMPTY_FORM); setFormError(''); setShowModal(true) }}>+ Добавить</button>
+          <button
+            type="button"
+            className="btn btn-danger btn-sm"
+            style={{ marginLeft: 8 }}
+            title="Временная кнопка для отладки импорта"
+            onClick={() => setDeleteAllConfirm(true)}
+          >
+            Удалить всех сотрудников
+          </button>
         </div>
       </div>
 
@@ -337,9 +403,10 @@ export default function EmployeesPage() {
           setParsed={setImportParsed}
           error={importError}
           setError={setImportError}
+          successMessage={importSuccessMessage}
           onImport={() => importMut.mutate(importParsed)}
           onImportExcel={(file) => importExcelMut.mutate(file)}
-          onClose={() => { setImportModal(false); setImportPaste(''); setImportParsed(null); setImportError('') }}
+          onClose={closeImportModal}
           loading={importMut.isPending}
           loadingExcel={importExcelMut.isPending}
         />
@@ -352,6 +419,16 @@ export default function EmployeesPage() {
           onConfirm={() => deleteMut.mutate(deleteTarget.id)}
           onCancel={() => setDeleteTarget(null)}
           loading={deleteMut.isPending}
+        />
+      )}
+
+      {/* Delete all (debug) */}
+      {deleteAllConfirm && (
+        <Confirm
+          message="Удалить всех сотрудников и позиций? Все данные (в т.ч. назначения, зарплаты) будут удалены. Только для отладки импорта."
+          onConfirm={() => deleteAllMut.mutate()}
+          onCancel={() => setDeleteAllConfirm(false)}
+          loading={deleteAllMut.isPending}
         />
       )}
     </div>
@@ -398,11 +475,21 @@ function EmployeeRow({ emp, year, onOpen, onDelete }) {
             </span>
           : '—'}
       </td>
-      {/* Monthly totals (year from context) */}
+      {/* Monthly totals (year from context); green = raise month */}
       {MONTHS.map((_, i) => {
         const val = emp.monthly_totals?.[i]
+        const isRaiseMonth = emp.monthly_is_raise?.[i] === true
         return (
-          <td className="td text-right text-small" key={i} style={{ minWidth: 70 }} onClick={onOpen}>
+          <td
+            className="td text-right text-small"
+            key={i}
+            style={{
+              minWidth: 70,
+              ...(isRaiseMonth ? { background: 'var(--green-light, rgba(34, 197, 94, 0.12))' } : {}),
+            }}
+            title={isRaiseMonth ? 'Повышение с этого месяца' : undefined}
+            onClick={onOpen}
+          >
             {val != null && val > 0 ? fmt(val) : <span className="text-muted">—</span>}
           </td>
         )
