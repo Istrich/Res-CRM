@@ -1,0 +1,98 @@
+import uuid
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.dependencies import get_current_user
+from app.models import Employee, EmployeeProject, Project, User
+from app.schemas.assignment import AssignmentCreate, AssignmentOut, AssignmentUpdate
+
+router = APIRouter(prefix="/assignments", tags=["assignments"])
+
+
+def _build_out(asgn: EmployeeProject) -> AssignmentOut:
+    return AssignmentOut(
+        id=asgn.id,
+        employee_id=asgn.employee_id,
+        project_id=asgn.project_id,
+        project_name=asgn.project.name if asgn.project else "",
+        employee_display_name=asgn.employee.display_name if asgn.employee else "",
+        rate=float(asgn.rate),
+        valid_from=asgn.valid_from,
+        valid_to=asgn.valid_to,
+    )
+
+
+@router.post("", response_model=AssignmentOut, status_code=status.HTTP_201_CREATED)
+def create_assignment(
+    body: AssignmentCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    # Validate employee and project exist
+    emp = db.query(Employee).filter(Employee.id == body.employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    proj = db.query(Project).filter(Project.id == body.project_id).first()
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    asgn = EmployeeProject(**body.model_dump())
+    db.add(asgn)
+    db.commit()
+    db.refresh(asgn)
+
+    # reload with relationships
+    asgn = (
+        db.query(EmployeeProject)
+        .filter(EmployeeProject.id == asgn.id)
+        .first()
+    )
+    return _build_out(asgn)
+
+
+@router.get("/{assignment_id}", response_model=AssignmentOut)
+def get_assignment(
+    assignment_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    asgn = db.query(EmployeeProject).filter(EmployeeProject.id == assignment_id).first()
+    if not asgn:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    return _build_out(asgn)
+
+
+@router.patch("/{assignment_id}", response_model=AssignmentOut)
+def update_assignment(
+    assignment_id: uuid.UUID,
+    body: AssignmentUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    asgn = db.query(EmployeeProject).filter(EmployeeProject.id == assignment_id).first()
+    if not asgn:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(asgn, field, value)
+
+    db.commit()
+    db.refresh(asgn)
+    return _build_out(asgn)
+
+
+@router.delete("/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_assignment(
+    assignment_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    asgn = db.query(EmployeeProject).filter(EmployeeProject.id == assignment_id).first()
+    if not asgn:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    db.delete(asgn)
+    db.commit()

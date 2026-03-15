@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+.pytest_cache/
+.mypy_cache/
+
+# Alembic
+# (keep migrations, ignore only generated files)
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Environment
+.env
+*.env.local
+*.env.*.local
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Docker
+postgres-data/
+pgdata/
+
+# Logs
+*.log
