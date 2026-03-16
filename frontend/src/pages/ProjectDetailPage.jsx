@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getProject, updateProject, deleteProject,
-  getProjectEmployees, removeEmployeeFromProject, setAssignmentRate,
+  getProjectEmployees, removeEmployeeFromProject, setAssignmentRate, updateAssignment,
   getProjectBudget, getEmployees, createAssignment,
   getBudgetProjects,
 } from '../api'
@@ -88,6 +88,23 @@ export default function ProjectDetailPage() {
     },
   })
 
+  const updateBaseRateMut = useMutation({
+    mutationFn: ({ assignmentId, rate }) => updateAssignment(assignmentId, { rate }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-employees', id, year] })
+      qc.invalidateQueries({ queryKey: ['project-budget', id, year] })
+    },
+  })
+
+  const updateAssignmentDatesMut = useMutation({
+    mutationFn: ({ assignmentId, valid_from, valid_to }) =>
+      updateAssignment(assignmentId, { ...(valid_from !== undefined && { valid_from }), ...(valid_to !== undefined && { valid_to }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-employees', id, year] })
+      qc.invalidateQueries({ queryKey: ['project-budget', id, year] })
+    },
+  })
+
   if (!project) return <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
 
   const statusBadgeStyle = { background: `${statusColor(budget?.status)}20`, color: statusColor(budget?.status) }
@@ -140,7 +157,7 @@ export default function ProjectDetailPage() {
             <table>
               <thead>
                 <tr>
-                  {MONTHS.map((m, i) => <th className="th text-right" key={i}>{m}</th>)}
+                  {MONTHS.map((m, i) => <th className="th text-right" key={i} style={i === new Date().getMonth() ? { background: '#fef9c3' } : undefined}>{m}</th>)}
                   <th className="th text-right fw-600">Итого</th>
                 </tr>
               </thead>
@@ -168,11 +185,16 @@ export default function ProjectDetailPage() {
           <div className="fw-600">Участники ({members.length})</div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAddEmpModal(true)}>+ Добавить сотрудника</button>
         </div>
+        <div className="text-muted text-small" style={{ marginBottom: 8 }}>
+          Нажмите на ставку для редактирования{year != null ? ', по месяцам или базовая' : ''}.
+        </div>
         <MembersTable
           members={members}
           year={year}
           withRates={Boolean(year != null && members[0]?.monthly_rates)}
           setRateMut={setRateMut}
+          updateBaseRateMut={updateBaseRateMut}
+          updateAssignmentDatesMut={updateAssignmentDatesMut}
           setRemoveTarget={setRemoveTarget}
           rateWarning={rateWarning}
           setRateWarning={setRateWarning}
@@ -281,6 +303,7 @@ function AddEmployeeModal({ projectId, onClose, onDone }) {
         <div className="form-group">
           <label className="label">По</label>
           <input className="input" type="date" value={validTo} onChange={e => setValidTo(e.target.value)} />
+          <div className="text-muted text-small" style={{ marginTop: 4 }}>Необязательно; если пусто — по сей день</div>
         </div>
       </div>
     </Modal>

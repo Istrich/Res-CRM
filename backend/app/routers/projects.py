@@ -9,7 +9,7 @@ from app.dependencies import get_current_user
 from app.models import AssignmentMonthRate, Employee, EmployeeProject, Project, User
 from app.schemas.employee import AssignmentOut, EmployeeListItem
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate, ProjectWithStats
-from app.services.calc import get_employee_month_total_rate, get_project_budget_summary
+from app.services.calc import assignment_active_in_month, get_employee_month_total_rate, get_project_budget_summary
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -186,7 +186,8 @@ def get_project_employees(
         }
         if year is not None:
             row["monthly_rates"] = [
-                year_overrides.get(asgn.id, {}).get(m, default_rate_by_asgn[asgn.id])
+                (year_overrides.get(asgn.id, {}).get(m, default_rate_by_asgn[asgn.id])
+                 if assignment_active_in_month(asgn, year, m) else 0)
                 for m in range(1, 13)
             ]
             row["monthly_total_rates"] = [

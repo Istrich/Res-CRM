@@ -6,13 +6,14 @@ import { useYearStore } from '../store/year'
 
 export default function HiringPage() {
   const navigate = useNavigate()
-  const { year } = useYearStore()
+  const { year, month } = useYearStore()
   const [search, setSearch] = useState('')
 
   const { data: positions = [], isLoading } = useQuery({
-    queryKey: ['employees', 'positions', year, search],
+    queryKey: ['employees', 'positions', year, month, search],
     queryFn: () => getEmployees({
       year,
+      month,
       is_position: true,
       search: search || undefined,
     }),

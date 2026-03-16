@@ -57,6 +57,7 @@ class AssignmentOut(BaseModel):
     rate: float
     valid_from: date
     valid_to: Optional[date]
+    monthly_rates: Optional[list[float]] = None  # 12 values when requested with year (Jan..Dec)
 
     class Config:
         from_attributes = True
@@ -139,6 +140,7 @@ class EmployeeOut(BaseModel):
     has_projects: bool
     created_at: datetime
     updated_at: datetime
+    assignments_monthly_total_rates: Optional[list[float]] = None  # 12 values when requested with year
 
     class Config:
         from_attributes = True

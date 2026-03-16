@@ -6,7 +6,7 @@ export const getMe = () => api.get('/auth/me').then(r => r.data)
 
 // Employees
 export const getEmployees = (params) => api.get('/employees', { params }).then(r => r.data)
-export const getEmployee = (id) => api.get(`/employees/${id}`).then(r => r.data)
+export const getEmployee = (id, params) => api.get(`/employees/${id}`, { params }).then(r => r.data)
 export const createEmployee = (data) => api.post('/employees', data).then(r => r.data)
 export const importEmployees = (rows) => api.post('/employees/import', rows).then(r => r.data)
 export const importEmployeesExcel = (file) => {

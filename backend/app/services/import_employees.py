@@ -15,7 +15,11 @@ from openpyxl.utils import get_column_letter
 # Точные и варианты написания заголовков (нижний регистр)
 HEADER_MAP = {
     "фамилия": "last_name",
+    "surname": "last_name",
+    "last name": "last_name",
+    "family name": "last_name",
     "имя": "first_name",
+    "first name": "first_name",
     "отчество": "middle_name",
     "фио": "fio",
     "специализация": "specialization",
@@ -28,9 +32,9 @@ HEADER_MAP = {
 
 # Дополнительные варианты (частичное совпадение для распознавания заголовка)
 HEADER_ALIASES = [
-    ("last_name", ("фамилия", "family", "last")),
-    ("first_name", ("имя", "name", "first")),
-    ("middle_name", ("отчество", "patronymic", "middle")),
+    ("last_name", ("фамилия", "фам", "surname", "family", "last name", "family name", "lastname")),
+    ("first_name", ("имя", "name", "first name", "firstname", "first")),
+    ("middle_name", ("отчество", "patronymic", "middle name", "middle")),
     ("fio", ("фио", "ф.и.о", "fio", "полное имя")),
     ("title", ("должность", "position", "title")),
     ("specialization", ("специализация", "specialization", "спец")),

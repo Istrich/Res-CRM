@@ -83,7 +83,7 @@ export default function SalaryTable({ employeeId, year, records = [] }) {
               Компонент
             </th>
             {MONTHS.map((m, i) => (
-              <th key={i} style={headerStyle}>{m}</th>
+              <th key={i} style={{ ...headerStyle, ...(i === new Date().getMonth() && { background: '#fef9c3' }) }}>{m}</th>
             ))}
             <th style={{ ...headerStyle, background: '#eef2ff' }}>Итого</th>
           </tr>

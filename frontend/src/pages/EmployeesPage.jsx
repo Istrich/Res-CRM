@@ -198,7 +198,7 @@ function ImportModal({ paste, setPaste, parsed, setParsed, error, setError, succ
 }
 
 export default function EmployeesPage() {
-  const { year } = useYearStore()
+  const { year, month, setMonth } = useYearStore()
   const qc = useQueryClient()
   const navigate = useNavigate()
 
@@ -217,8 +217,14 @@ export default function EmployeesPage() {
   const [formError, setFormError] = useState('')
 
   const { data: employees = [], isLoading } = useQuery({
-    queryKey: ['employees', year, { search, department: filterDept, specialization: filterSpec }],
-    queryFn: () => getEmployees({ year, search: search || undefined, department: filterDept || undefined, specialization: filterSpec || undefined }),
+    queryKey: ['employees', year, month, { search, department: filterDept, specialization: filterSpec }],
+    queryFn: () => getEmployees({
+      year,
+      month,
+      search: search || undefined,
+      department: filterDept || undefined,
+      specialization: filterSpec || undefined,
+    }),
   })
 
   const createMut = useMutation({
@@ -253,7 +259,10 @@ export default function EmployeesPage() {
       alert(`Удалено записей: ${n}`)
     },
     onError: (e) => {
-      alert(formatApiError(e.response?.data?.detail) || 'Ошибка')
+      const msg = e.response?.status === 404
+        ? 'Удаление всех недоступно (на сервере отключён отладочный режим).'
+        : (formatApiError(e.response?.data?.detail) || 'Ошибка')
+      alert(msg)
     },
   })
 
@@ -352,6 +361,12 @@ export default function EmployeesPage() {
             <option value="">Все специализации</option>
             {specs.map(s => <option key={s}>{s}</option>)}
           </select>
+          <span className="text-muted" style={{ marginLeft: 8 }}>Проекты за:</span>
+          <select className="select" value={month} onChange={e => setMonth(Number(e.target.value))} title="Месяц, за который показывать проекты и ставки">
+            {MONTHS.map((m, i) => (
+              <option key={i} value={i + 1}>{m}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -364,11 +379,11 @@ export default function EmployeesPage() {
               <th className="th">Должность</th>
               <th className="th">Подразделение</th>
               <th className="th">Специализация</th>
-              <th className="th">Проекты / Ставки</th>
+              <th className="th">Проекты / Ставки ({MONTHS[month - 1]} {year})</th>
               <th className="th">Найм</th>
               <th className="th">Увольнение</th>
               {MONTHS.map((m, i) => (
-                <th className="th" key={i} style={{ minWidth: 70, textAlign: 'right' }}>{m}</th>
+                <th className="th" key={i} style={{ minWidth: 70, textAlign: 'right', ...(i === new Date().getMonth() && { background: '#fef9c3' }) }}>{m}</th>
               ))}
               <th className="th" />
             </tr>

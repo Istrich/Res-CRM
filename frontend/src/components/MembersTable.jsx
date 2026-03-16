@@ -1,7 +1,59 @@
 import { useState } from 'react'
 import { fmtDate, MONTHS } from '../utils'
 
-function MemberRateCell({ value, assignmentId, month, year, onSave, saving }) {
+/** Editable date cell: click to show date input; nullable=true allows clearing (for valid_to). */
+export function EditableDateCell({ value, nullable, onSave, saving }) {
+  const [editing, setEditing] = useState(false)
+  const [inputVal, setInputVal] = useState(value || '')
+
+  const save = () => {
+    const v = inputVal.trim()
+    if (nullable && !v) {
+      onSave(null)
+    } else if (v) {
+      onSave(v)
+    } else {
+      setInputVal(value || '')
+    }
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+        <input
+          className="input input-sm"
+          type="date"
+          style={{ width: 130 }}
+          value={inputVal}
+          onChange={e => setInputVal(e.target.value)}
+          onBlur={save}
+          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setInputVal(value || ''); setEditing(false) } }}
+          autoFocus
+        />
+        {nullable && (
+          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => { onSave(null); setEditing(false) }}>
+            Без даты
+          </button>
+        )}
+      </div>
+    )
+  }
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost btn-sm text-muted"
+      style={{ minWidth: 40, textAlign: 'left' }}
+      onClick={() => { setInputVal(value || ''); setEditing(true) }}
+      disabled={saving}
+      title="Нажмите для изменения даты"
+    >
+      {value ? fmtDate(value) : (nullable ? 'по сей день' : '—')}
+    </button>
+  )
+}
+
+export function MemberRateCell({ value, assignmentId, month, year, onSave, saving }) {
   const [editing, setEditing] = useState(false)
   const [inputVal, setInputVal] = useState(String(value))
 
@@ -53,6 +105,8 @@ export default function MembersTable({
   year,
   withRates,
   setRateMut,
+  updateBaseRateMut,
+  updateAssignmentDatesMut,
   setRemoveTarget,
   rateWarning,
   setRateWarning,
@@ -71,7 +125,7 @@ export default function MembersTable({
                 <th className="th">Сотрудник / Позиция</th>
                 <th className="th">Должность</th>
                 <th className="th">Подразделение</th>
-                {MONTHS.map((m, i) => <th className="th text-right" key={i} style={{ minWidth: 64 }}>{m}</th>)}
+                {MONTHS.map((m, i) => <th className="th text-right" key={i} style={{ minWidth: 64, ...(i === new Date().getMonth() && { background: '#fef9c3' }) }}>{m}</th>)}
                 <th className="th">С</th>
                 <th className="th">По</th>
                 <th className="th" />
@@ -112,8 +166,30 @@ export default function MembersTable({
                       />
                     </td>
                   ))}
-                  <td className="td text-muted">{fmtDate(m.valid_from)}</td>
-                  <td className="td text-muted">{m.valid_to ? fmtDate(m.valid_to) : 'по сей день'}</td>
+                  <td className="td text-muted">
+                    {updateAssignmentDatesMut ? (
+                      <EditableDateCell
+                        value={m.valid_from}
+                        nullable={false}
+                        onSave={(v) => updateAssignmentDatesMut.mutate({ assignmentId: m.assignment_id, valid_from: v })}
+                        saving={updateAssignmentDatesMut.isPending}
+                      />
+                    ) : (
+                      fmtDate(m.valid_from)
+                    )}
+                  </td>
+                  <td className="td text-muted">
+                    {updateAssignmentDatesMut ? (
+                      <EditableDateCell
+                        value={m.valid_to}
+                        nullable
+                        onSave={(v) => updateAssignmentDatesMut.mutate({ assignmentId: m.assignment_id, valid_to: v })}
+                        saving={updateAssignmentDatesMut.isPending}
+                      />
+                    ) : (
+                      (m.valid_to ? fmtDate(m.valid_to) : 'по сей день')
+                    )}
+                  </td>
                   <td className="td">
                     <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={() => setRemoveTarget(m)}>✕</button>
                   </td>
@@ -158,9 +234,44 @@ export default function MembersTable({
             </td>
             <td className="td">{m.title}</td>
             <td className="td text-muted">{m.department || '—'}</td>
-            <td className="td text-right">{m.rate}</td>
-            <td className="td text-muted">{fmtDate(m.valid_from)}</td>
-            <td className="td text-muted">{m.valid_to ? fmtDate(m.valid_to) : 'по сей день'}</td>
+            <td className="td text-right">
+              {updateBaseRateMut ? (
+                <MemberRateCell
+                  value={m.rate}
+                  assignmentId={m.assignment_id}
+                  month={null}
+                  year={year}
+                  onSave={(rate) => updateBaseRateMut.mutate({ assignmentId: m.assignment_id, rate })}
+                  saving={updateBaseRateMut.isPending}
+                />
+              ) : (
+                m.rate
+              )}
+            </td>
+            <td className="td text-muted">
+              {updateAssignmentDatesMut ? (
+                <EditableDateCell
+                  value={m.valid_from}
+                  nullable={false}
+                  onSave={(v) => updateAssignmentDatesMut.mutate({ assignmentId: m.assignment_id, valid_from: v })}
+                  saving={updateAssignmentDatesMut.isPending}
+                />
+              ) : (
+                fmtDate(m.valid_from)
+              )}
+            </td>
+            <td className="td text-muted">
+              {updateAssignmentDatesMut ? (
+                <EditableDateCell
+                  value={m.valid_to}
+                  nullable
+                  onSave={(v) => updateAssignmentDatesMut.mutate({ assignmentId: m.assignment_id, valid_to: v })}
+                  saving={updateAssignmentDatesMut.isPending}
+                />
+              ) : (
+                (m.valid_to ? fmtDate(m.valid_to) : 'по сей день')
+              )}
+            </td>
             <td className="td">
               <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={() => setRemoveTarget(m)}>✕</button>
             </td>

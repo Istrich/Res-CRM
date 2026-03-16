@@ -1,13 +1,34 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getProjects, createAssignment, deleteAssignment } from '../api'
-import { fmtDate } from '../utils'
+import { fmtDate, MONTHS } from '../utils'
 
-export default function AssignmentManager({ employeeId, assignments = [], onRefresh }) {
+/** For a given year, returns total rate per month (1..12) for assignments that are active in that month. */
+function getMonthlyTotalRates(assignments, year) {
+  const totals = Array(12).fill(0)
+  const y = year || new Date().getFullYear()
+  for (const a of assignments) {
+    const from = a.valid_from ? new Date(a.valid_from) : null
+    const to = a.valid_to ? new Date(a.valid_to) : null
+    const rate = Number(a.rate) || 0
+    for (let m = 1; m <= 12; m++) {
+      const first = new Date(y, m - 1, 1)
+      const last = new Date(y, m, 0)
+      if (from && last < from) continue
+      if (to && first > to) continue
+      totals[m - 1] += rate
+    }
+  }
+  return totals
+}
+
+export default function AssignmentManager({ employeeId, assignments = [], onRefresh, year }) {
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState({ project_id: '', rate: '1.0', valid_from: '', valid_to: '' })
   const [err, setErr] = useState('')
+
+  const refYear = year ?? new Date().getFullYear()
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
@@ -48,15 +69,18 @@ export default function AssignmentManager({ employeeId, assignments = [], onRefr
     })
   }
 
-  // Total rate warning
-  const totalRate = assignments.reduce((s, a) => s + a.rate, 0)
-  const rateWarning = totalRate > 0 && Math.abs(totalRate - 1.0) > 0.001
+  // Per-month rate warning: only warn for months where sum of rates != 1 (assignments can be in different periods)
+  const monthlyRates = getMonthlyTotalRates(assignments, refYear)
+  const monthsOff = monthlyRates
+    .map((r, i) => (Math.abs(r - 1.0) > 0.001 ? MONTHS[i] : null))
+    .filter(Boolean)
+  const rateWarning = monthsOff.length > 0
 
   return (
     <div>
       {rateWarning && (
         <div className="alert alert-warning" style={{ marginBottom: 12 }}>
-          Сумма ставок: {totalRate.toFixed(2)} (рекомендуется 1.00)
+          В {refYear} в месяцах {monthsOff.join(', ')} сумма ставок по проектам не равна 1 (рекомендуется 1.00 в каждом месяце).
         </div>
       )}
 

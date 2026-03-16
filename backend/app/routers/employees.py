@@ -1,4 +1,5 @@
 import uuid
+from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -9,7 +10,8 @@ from app.services.import_employees import parse_employee_excel
 from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import Employee, EmployeeProject, SalaryRecord, User
+from app.models import AssignmentMonthRate, Employee, EmployeeProject, SalaryRecord, User
+from app.services.calc import assignment_active_in_month, get_employee_month_total_rate
 from app.schemas.employee import (
     AssignmentOut,
     EmployeeCreate,
@@ -24,7 +26,7 @@ from app.schemas.employee import (
 router = APIRouter(prefix="/employees", tags=["employees"])
 
 
-def _build_assignment_out(ep: EmployeeProject) -> AssignmentOut:
+def _build_assignment_out(ep: EmployeeProject, monthly_rates: list[float] | None = None) -> AssignmentOut:
     return AssignmentOut(
         id=ep.id,
         project_id=ep.project_id,
@@ -32,15 +34,49 @@ def _build_assignment_out(ep: EmployeeProject) -> AssignmentOut:
         rate=float(ep.rate),
         valid_from=ep.valid_from,
         valid_to=ep.valid_to,
+        monthly_rates=monthly_rates,
     )
 
 
-def _build_employee_out(emp: Employee) -> EmployeeOut:
-    assignments = [_build_assignment_out(ep) for ep in emp.employee_projects]
+def _build_employee_out(
+    emp: Employee,
+    year: Optional[int] = None,
+    db: Optional[Session] = None,
+) -> EmployeeOut:
     salary_records = [
         SalaryRecordOut.from_orm_with_total(r)
-        for r in sorted(emp.salary_records, key=lambda r: (r.year, r.month))
+        for r in sorted(emp.salary_records or [], key=lambda r: (r.year, r.month))
     ]
+
+    assignments: list[AssignmentOut] = []
+    assignments_monthly_total_rates: Optional[list[float]] = None
+
+    if year is not None and db is not None and emp.employee_projects:
+        assignment_ids = [ep.id for ep in emp.employee_projects]
+        overrides_q = (
+            db.query(AssignmentMonthRate)
+            .filter(
+                AssignmentMonthRate.assignment_id.in_(assignment_ids),
+                AssignmentMonthRate.year == year,
+            )
+        )
+        year_overrides: dict[uuid.UUID, dict[int, float]] = {}
+        for o in overrides_q:
+            year_overrides.setdefault(o.assignment_id, {})[o.month] = float(o.rate)
+        default_rate_by_ep = {ep.id: float(ep.rate) for ep in emp.employee_projects}
+        for ep in emp.employee_projects:
+            monthly_rates = [
+                (year_overrides.get(ep.id, {}).get(m, default_rate_by_ep[ep.id])
+                 if assignment_active_in_month(ep, year, m) else 0)
+                for m in range(1, 13)
+            ]
+            assignments.append(_build_assignment_out(ep, monthly_rates=monthly_rates))
+        assignments_monthly_total_rates = [
+            get_employee_month_total_rate(db, emp.id, year, m) for m in range(1, 13)
+        ]
+    else:
+        assignments = [_build_assignment_out(ep) for ep in emp.employee_projects]
+
     return EmployeeOut(
         id=emp.id,
         is_position=emp.is_position,
@@ -59,11 +95,38 @@ def _build_employee_out(emp: Employee) -> EmployeeOut:
         has_projects=len(emp.employee_projects) > 0,
         created_at=emp.created_at,
         updated_at=emp.updated_at,
+        assignments_monthly_total_rates=assignments_monthly_total_rates,
     )
 
 
-def _build_list_item(emp: Employee, year: Optional[int] = None) -> EmployeeListItem:
-    assignments = [_build_assignment_out(ep) for ep in emp.employee_projects]
+def _assignments_active_in_month(employee_projects, year: int, month: int):
+    """Return assignments that are active in the given (year, month)."""
+    first_day = date(year, month, 1)
+    if month == 12:
+        last_day = date(year, 12, 31)
+    else:
+        last_day = date(year, month + 1, 1) - timedelta(days=1)
+    for ep in employee_projects:
+        if ep.valid_from > last_day:
+            continue
+        if ep.valid_to is not None and ep.valid_to < first_day:
+            continue
+        yield ep
+
+
+def _build_list_item(
+    emp: Employee,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+) -> EmployeeListItem:
+    if year is not None and month is not None and 1 <= month <= 12:
+        active = list(_assignments_active_in_month(emp.employee_projects, year, month))
+        assignments = [_build_assignment_out(ep) for ep in active]
+        has_projects = len(active) > 0
+    else:
+        assignments = [_build_assignment_out(ep) for ep in emp.employee_projects]
+        has_projects = len(emp.employee_projects) > 0
+
     monthly_totals = None
     monthly_is_raise = None
     if year is not None and hasattr(emp, "salary_records") and emp.salary_records is not None:
@@ -85,7 +148,7 @@ def _build_list_item(emp: Employee, year: Optional[int] = None) -> EmployeeListI
         hire_date=emp.hire_date,
         termination_date=emp.termination_date,
         assignments=assignments,
-        has_projects=len(emp.employee_projects) > 0,
+        has_projects=has_projects,
         monthly_totals=monthly_totals,
         monthly_is_raise=monthly_is_raise,
     )
@@ -99,11 +162,14 @@ def list_employees(
     project_id: Optional[uuid.UUID] = Query(None),
     search: Optional[str] = Query(None),
     year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None, ge=1, le=12),
     include_terminated: bool = Query(True),
     is_position: Optional[bool] = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
+    if month is not None and year is None:
+        year = date.today().year
     load_opts = [
         joinedload(Employee.employee_projects).joinedload(EmployeeProject.project),
     ]
@@ -130,7 +196,7 @@ def list_employees(
         q = q.join(Employee.employee_projects).filter(EmployeeProject.project_id == project_id)
 
     employees = q.order_by(Employee.last_name, Employee.first_name).all()
-    return [_build_list_item(e, year) for e in employees]
+    return [_build_list_item(e, year, month) for e in employees]
 
 
 def _preview_row(row: dict | object) -> str:
@@ -253,6 +319,7 @@ def create_employee(
 @router.get("/{employee_id}", response_model=EmployeeOut)
 def get_employee(
     employee_id: uuid.UUID,
+    year: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -267,7 +334,29 @@ def get_employee(
     )
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
-    return _build_employee_out(emp)
+    return _build_employee_out(emp, year=year, db=db)
+
+
+def _ensure_assignments_within_employment(emp: Employee, db: Session) -> None:
+    """Raise HTTPException if any assignment period goes beyond employee employment period."""
+    assignments = db.query(EmployeeProject).filter(EmployeeProject.employee_id == emp.id).all()
+    for asgn in assignments:
+        if emp.hire_date is not None and asgn.valid_from < emp.hire_date:
+            raise HTTPException(
+                status_code=400,
+                detail="Есть назначения на проекты, начинающиеся раньше даты найма. Сначала измените периоды в проектах.",
+            )
+        if emp.termination_date is not None:
+            if asgn.valid_to is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Есть назначения на проекты без даты окончания. При дате увольнения укажите окончание работы на каждом проекте.",
+                )
+            if asgn.valid_to > emp.termination_date:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Есть назначения на проекты, заканчивающиеся позже даты увольнения. Сначала измените периоды в проектах.",
+                )
 
 
 @router.patch("/{employee_id}", response_model=EmployeeOut)
@@ -281,8 +370,12 @@ def update_employee(
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    updates = body.model_dump(exclude_unset=True)
+    for field, value in updates.items():
         setattr(emp, field, value)
+
+    if "hire_date" in updates or "termination_date" in updates:
+        _ensure_assignments_within_employment(emp, db)
 
     db.commit()
     db.refresh(emp)

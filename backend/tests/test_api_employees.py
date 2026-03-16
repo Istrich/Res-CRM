@@ -162,6 +162,34 @@ class TestEmployeesCRUD:
         r = authed_client.get("/employees")
         assert len(r.json()) == 2
 
+    def test_list_assignments_filtered_by_month(self, authed_client, make_employee, make_project, make_assignment):
+        """Assignments in list response are limited to those active in the given year/month."""
+        emp = make_employee()
+        proj_a = make_project(name="Project A")
+        proj_b = make_project(name="Project B")
+        proj_c = make_project(name="Project C")
+        make_assignment(emp, proj_a, rate=1.0, valid_from=date(2025, 1, 1), valid_to=date(2025, 3, 31))
+        make_assignment(emp, proj_b, rate=0.5, valid_from=date(2025, 4, 1), valid_to=None)
+        make_assignment(emp, proj_c, rate=0.5, valid_from=date(2025, 4, 1), valid_to=None)
+
+        r_mar = authed_client.get("/employees", params={"year": 2025, "month": 3})
+        assert r_mar.status_code == 200
+        data_mar = r_mar.json()
+        assert len(data_mar) == 1
+        assert len(data_mar[0]["assignments"]) == 1
+        assert data_mar[0]["assignments"][0]["project_name"] == "Project A"
+        assert data_mar[0]["assignments"][0]["rate"] == 1.0
+
+        r_apr = authed_client.get("/employees", params={"year": 2025, "month": 4})
+        assert r_apr.status_code == 200
+        data_apr = r_apr.json()
+        assert len(data_apr) == 1
+        assert len(data_apr[0]["assignments"]) == 2
+        names = {a["project_name"] for a in data_apr[0]["assignments"]}
+        assert names == {"Project B", "Project C"}
+        for a in data_apr[0]["assignments"]:
+            assert a["rate"] == 0.5
+
 
 # ---------------------------------------------------------------------------
 # Salary records

@@ -89,6 +89,17 @@ def get_salary_for_month(db: Session, employee_id, year: int, month: int) -> tup
     return (prev_year, False) if prev_year else (None, False)
 
 
+def assignment_active_in_month(asgn: EmployeeProject, year: int, month: int) -> bool:
+    """Return True if assignment is active in the given month (valid_from/valid_to)."""
+    ms = _month_start(year, month)
+    me = _month_end(year, month)
+    if asgn.valid_from > me:
+        return False
+    if asgn.valid_to is not None and asgn.valid_to < ms:
+        return False
+    return True
+
+
 def get_assignments_for_month(db: Session, employee_id, year: int, month: int) -> list[EmployeeProject]:
     """Return all project assignments active during the given month."""
     ms = _month_start(year, month)

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getEmployee, updateEmployee, deleteEmployee,
   upsertSalary, deleteSalary,
-  createAssignment, updateAssignment, deleteAssignment,
+  createAssignment, deleteAssignment, setAssignmentRate, updateAssignment,
   getProjects,
 } from '../api'
 import { useYearStore } from '../store/year'
@@ -12,6 +12,7 @@ import { MONTHS, fmt, fmtDate } from '../utils'
 import Modal from '../components/ui/Modal'
 import Confirm from '../components/ui/Confirm'
 import EmployeeForm from '../components/EmployeeForm'
+import { MemberRateCell, EditableDateCell } from '../components/MembersTable'
 
 export default function EmployeeDetailPage() {
   const { id } = useParams()
@@ -28,8 +29,8 @@ export default function EmployeeDetailPage() {
   const [editForm, setEditForm] = useState(null)
 
   const { data: emp, isLoading } = useQuery({
-    queryKey: ['employee', id],
-    queryFn: () => getEmployee(id),
+    queryKey: ['employee', id, year],
+    queryFn: () => getEmployee(id, { year }),
   })
 
   useEffect(() => {
@@ -83,6 +84,22 @@ export default function EmployeeDetailPage() {
   const deleteAssignMut = useMutation({
     mutationFn: deleteAssignment,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['employee', id] }),
+  })
+
+  const setRateMut = useMutation({
+    mutationFn: ({ assignmentId, month, rate }) => setAssignmentRate(assignmentId, year, month, rate),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employee', id, year] }),
+  })
+
+  const updateBaseRateMut = useMutation({
+    mutationFn: ({ assignmentId, rate }) => updateAssignment(assignmentId, { rate }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employee', id, year] }),
+  })
+
+  const updateAssignmentDatesMut = useMutation({
+    mutationFn: ({ assignmentId, valid_from, valid_to }) =>
+      updateAssignment(assignmentId, { ...(valid_from !== undefined && { valid_from }), ...(valid_to !== undefined && { valid_to }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employee', id, year] }),
   })
 
   if (isLoading) return <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
@@ -148,35 +165,133 @@ export default function EmployeeDetailPage() {
       {/* Assignments */}
       <div className="card" style={{ padding: '16px 20px', marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div className="fw-600">Проекты</div>
+          <div className="fw-600">Проекты {year}</div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAssignModal(true)}>+ Добавить в проект</button>
+        </div>
+        <div className="text-muted text-small" style={{ marginBottom: 10 }}>
+          Можно указать несколько проектов с разными периодами. Нажмите на ставку или дату для редактирования.
         </div>
         {emp.assignments.length === 0
           ? <div className="text-muted text-small">Не привязан ни к одному проекту</div>
-          : <table>
-            <thead>
-              <tr>
-                <th className="th">Проект</th>
-                <th className="th">Ставка</th>
-                <th className="th">С</th>
-                <th className="th">По</th>
-                <th className="th" />
-              </tr>
-            </thead>
-            <tbody>
-              {emp.assignments.map(a => (
-                <tr key={a.id}>
-                  <td className="td fw-500">{a.project_name}</td>
-                  <td className="td">{a.rate}</td>
-                  <td className="td text-muted">{fmtDate(a.valid_from)}</td>
-                  <td className="td text-muted">{a.valid_to ? fmtDate(a.valid_to) : 'по сей день'}</td>
-                  <td className="td">
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => deleteAssignMut.mutate(a.id)}>✕</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          : emp.assignments[0].monthly_rates != null
+            ? (
+              <>
+                <div className="overflow-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th className="th">Проект</th>
+                        {MONTHS.map((m, i) => (
+                          <th className="th text-right" key={i} style={{ minWidth: 64, ...(i === new Date().getMonth() && { background: '#fef9c3' }) }}>{m}</th>
+                        ))}
+                        <th className="th">С</th>
+                        <th className="th">По</th>
+                        <th className="th" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {emp.assignments.map(a => (
+                        <tr key={a.id}>
+                          <td className="td fw-500">{a.project_name}</td>
+                          {(a.monthly_rates || Array(12).fill(a.rate)).map((r, i) => (
+                            <td
+                              className="td text-right"
+                              key={i}
+                              style={emp.assignments_monthly_total_rates && (emp.assignments_monthly_total_rates[i] < 1 || emp.assignments_monthly_total_rates[i] > 1)
+                                ? { background: 'var(--warning-bg, rgba(220, 150, 0, 0.12))' }
+                                : undefined}
+                              title={emp.assignments_monthly_total_rates ? `Сумма ставок по всем проектам: ${emp.assignments_monthly_total_rates[i]}` : undefined}
+                            >
+                              <MemberRateCell
+                                value={r}
+                                assignmentId={a.id}
+                                month={i + 1}
+                                year={year}
+                                onSave={(rate) => setRateMut.mutate({ assignmentId: a.id, month: i + 1, rate })}
+                                saving={setRateMut.isPending}
+                              />
+                            </td>
+                          ))}
+                          <td className="td text-muted">
+                            <EditableDateCell
+                              value={a.valid_from}
+                              nullable={false}
+                              onSave={(v) => updateAssignmentDatesMut.mutate({ assignmentId: a.id, valid_from: v })}
+                              saving={updateAssignmentDatesMut.isPending}
+                            />
+                          </td>
+                          <td className="td text-muted">
+                            <EditableDateCell
+                              value={a.valid_to}
+                              nullable
+                              onSave={(v) => updateAssignmentDatesMut.mutate({ assignmentId: a.id, valid_to: v })}
+                              saving={updateAssignmentDatesMut.isPending}
+                            />
+                          </td>
+                          <td className="td">
+                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => deleteAssignMut.mutate(a.id)}>✕</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {emp.assignments_monthly_total_rates && emp.assignments_monthly_total_rates.some((t, i) => Math.abs(t - 1) > 0.001) && (
+                  <div className="alert alert-warning" style={{ marginTop: 12 }}>
+                    В некоторых месяцах сумма ставок по проектам не равна 1. Проверьте значения в таблице выше.
+                  </div>
+                )}
+              </>
+            )
+            : (
+              <table>
+                <thead>
+                  <tr>
+                    <th className="th">Проект</th>
+                    <th className="th">Ставка</th>
+                    <th className="th">С</th>
+                    <th className="th">По</th>
+                    <th className="th" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {emp.assignments.map(a => (
+                    <tr key={a.id}>
+                      <td className="td fw-500">{a.project_name}</td>
+                      <td className="td">
+                        <MemberRateCell
+                          value={a.rate}
+                          assignmentId={a.id}
+                          month={null}
+                          year={year}
+                          onSave={(rate) => updateBaseRateMut.mutate({ assignmentId: a.id, rate })}
+                          saving={updateBaseRateMut.isPending}
+                        />
+                      </td>
+                      <td className="td text-muted">
+                        <EditableDateCell
+                          value={a.valid_from}
+                          nullable={false}
+                          onSave={(v) => updateAssignmentDatesMut.mutate({ assignmentId: a.id, valid_from: v })}
+                          saving={updateAssignmentDatesMut.isPending}
+                        />
+                      </td>
+                      <td className="td text-muted">
+                        <EditableDateCell
+                          value={a.valid_to}
+                          nullable
+                          onSave={(v) => updateAssignmentDatesMut.mutate({ assignmentId: a.id, valid_to: v })}
+                          saving={updateAssignmentDatesMut.isPending}
+                        />
+                      </td>
+                      <td className="td">
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => deleteAssignMut.mutate(a.id)}>✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
         }
       </div>
 
@@ -192,7 +307,7 @@ export default function EmployeeDetailPage() {
               <tr>
                 <th className="th">Компонент</th>
                 {MONTHS.map((m, i) => (
-                  <th className="th text-right" key={i} style={{ minWidth: 80 }}>{m}</th>
+                  <th className="th text-right" key={i} style={{ minWidth: 80, ...(i === new Date().getMonth() && { background: '#fef9c3' }) }}>{m}</th>
                 ))}
                 <th className="th text-right">Итого</th>
               </tr>
@@ -416,7 +531,7 @@ function AddAssignmentModal({ employeeId, onClose, onDone }) {
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
-      <div className="grid-3">
+        <div className="grid-3">
         <div className="form-group">
           <label className="label">Ставка</label>
           <input className="input" type="number" step="0.1" min="0.1" value={rate} onChange={e => setRate(e.target.value)} />
@@ -428,6 +543,7 @@ function AddAssignmentModal({ employeeId, onClose, onDone }) {
         <div className="form-group">
           <label className="label">По</label>
           <input className="input" type="date" value={validTo} onChange={e => setValidTo(e.target.value)} />
+          <div className="text-muted text-small" style={{ marginTop: 4 }}>Необязательно; если пусто — по сей день</div>
         </div>
       </div>
     </Modal>
