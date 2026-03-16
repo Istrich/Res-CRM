@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  getEmployee, updateEmployee, deleteEmployee,
+  getEmployee, updateEmployee, deleteEmployee, hireFromPosition,
   upsertSalary, deleteSalary,
   createAssignment, deleteAssignment, setAssignmentRate, updateAssignment,
   getProjects,
@@ -10,6 +10,12 @@ import {
 import { useYearStore } from '../store/year'
 import { MONTHS, fmt, fmtDate } from '../utils'
 import Modal from '../components/ui/Modal'
+
+const POSITION_STATUS_LABELS = {
+  awaiting_assignment: 'Ожидает взятия в работу',
+  hiring: 'Найм',
+  awaiting_start: 'Ожидаем выход',
+}
 import Confirm from '../components/ui/Confirm'
 import EmployeeForm from '../components/EmployeeForm'
 import { MemberRateCell, EditableDateCell } from '../components/MembersTable'
@@ -21,6 +27,8 @@ export default function EmployeeDetailPage() {
   const { year } = useYearStore()
 
   const [editModal, setEditModal] = useState(false)
+  const [hireModal, setHireModal] = useState(false)
+  const [hireForm, setHireForm] = useState({ first_name: '', last_name: '', middle_name: '', hire_date: '', department: '', specialization: '', comment: '' })
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [salaryModal, setSalaryModal] = useState(null) // { month } | null
   const [salaryExtend, setSalaryExtend] = useState({ salary: false, kpi_bonus: false, fixed_bonus: false, one_time_bonus: false })
@@ -35,6 +43,7 @@ export default function EmployeeDetailPage() {
 
   useEffect(() => {
     if (emp && !editForm) setEditForm({
+      ...emp,
       first_name: emp.first_name || '',
       last_name: emp.last_name || '',
       middle_name: emp.middle_name || '',
@@ -44,6 +53,9 @@ export default function EmployeeDetailPage() {
       comment: emp.comment || '',
       hire_date: emp.hire_date || '',
       termination_date: emp.termination_date || '',
+      planned_exit_date: emp.planned_exit_date || '',
+      planned_salary: emp.planned_salary ?? '',
+      position_status: emp.position_status || 'awaiting_assignment',
     })
   }, [emp])
 
@@ -102,6 +114,15 @@ export default function EmployeeDetailPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['employee', id, year] }),
   })
 
+  const hireMut = useMutation({
+    mutationFn: (data) => hireFromPosition(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['employee', id] })
+      qc.invalidateQueries({ queryKey: ['employees', 'positions'] })
+      setHireModal(false)
+    },
+  })
+
   if (isLoading) return <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
   if (!emp) return <div>Не найдено</div>
 
@@ -116,7 +137,10 @@ export default function EmployeeDetailPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate('/employees')}>← Назад</button>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn btn-secondary" onClick={() => { setEditForm({ ...emp }); setEditModal(true) }}>✏ Редактировать</button>
+        {emp.is_position && (
+          <button type="button" className="btn btn-primary" onClick={() => setHireModal(true)}>✓ Нанять</button>
+        )}
+        <button type="button" className="btn btn-secondary" onClick={() => { setEditForm({ ...emp, planned_exit_date: emp.planned_exit_date || '', planned_salary: emp.planned_salary ?? '', position_status: emp.position_status || 'awaiting_assignment' }); setEditModal(true) }}>✏ Редактировать</button>
         <button type="button" className="btn btn-danger btn-sm" onClick={() => setDeleteConfirm(true)}>🗑 Удалить</button>
       </div>
 
@@ -148,11 +172,29 @@ export default function EmployeeDetailPage() {
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 20px', fontSize: 13 }}>
-            <span className="text-muted">Найм:</span><span>{fmtDate(emp.hire_date)}</span>
-            <span className="text-muted">Увольнение:</span>
-            <span style={{ color: isTerminated ? 'var(--red)' : emp.termination_date ? 'var(--amber)' : 'inherit' }}>
-              {fmtDate(emp.termination_date)}
-            </span>
+            {!emp.is_position && (
+              <>
+                <span className="text-muted">Найм:</span><span>{fmtDate(emp.hire_date)}</span>
+                <span className="text-muted">Увольнение:</span>
+                <span style={{ color: isTerminated ? 'var(--red)' : emp.termination_date ? 'var(--amber)' : 'inherit' }}>
+                  {fmtDate(emp.termination_date)}
+                </span>
+              </>
+            )}
+            {emp.is_position && (emp.planned_exit_date != null || emp.planned_salary != null || emp.position_status) && (
+              <>
+                <span className="text-muted">Статус:</span>
+                <span>{POSITION_STATUS_LABELS[emp.position_status] || emp.position_status || '—'}</span>
+                <span className="text-muted">Плановая дата выхода:</span><span>{fmtDate(emp.planned_exit_date)}</span>
+                <span className="text-muted">Оклад:</span><span>{emp.planned_salary != null ? fmt(emp.planned_salary) : '—'}</span>
+                {emp.assignments?.[0] && (
+                  <>
+                    <span className="text-muted">Проект:</span><span>{emp.assignments[0].project_name}</span>
+                    <span className="text-muted">Ставка:</span><span>×{emp.assignments[0].rate}</span>
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
         {emp.comment && (
@@ -408,6 +450,71 @@ export default function EmployeeDetailPage() {
           onClose={() => setAssignModal(false)}
           onDone={() => { qc.invalidateQueries({ queryKey: ['employee', id] }); setAssignModal(false) }}
         />
+      )}
+
+      {/* Hire modal (position -> employee) */}
+      {hireModal && emp?.is_position && (
+        <Modal
+          title="Нанять на позицию"
+          onClose={() => setHireModal(false)}
+          footer={
+            <>
+              <button type="button" className="btn btn-secondary" onClick={() => setHireModal(false)}>Отмена</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={(!hireForm.last_name?.trim() && !hireForm.first_name?.trim()) || hireMut.isPending}
+                onClick={() => hireMut.mutate({
+                  first_name: hireForm.first_name || null,
+                  last_name: hireForm.last_name || null,
+                  middle_name: hireForm.middle_name || null,
+                  hire_date: hireForm.hire_date || null,
+                  department: hireForm.department || null,
+                  specialization: hireForm.specialization || null,
+                  comment: hireForm.comment || null,
+                })}
+              >
+                {hireMut.isPending ? <span className="spinner" /> : 'Нанять'}
+              </button>
+            </>
+          }
+        >
+          <p style={{ marginBottom: 16, color: 'var(--text-2)' }}>
+            Укажите ФИО и дату выхода. Позиция станет сотрудником и исчезнет из вкладки «Найм».
+          </p>
+          <div className="grid-3" style={{ marginBottom: 16 }}>
+            <div className="form-group">
+              <label className="label">Фамилия *</label>
+              <input className="input" value={hireForm.last_name} onChange={e => setHireForm(f => ({ ...f, last_name: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="label">Имя *</label>
+              <input className="input" value={hireForm.first_name} onChange={e => setHireForm(f => ({ ...f, first_name: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="label">Отчество</label>
+              <input className="input" value={hireForm.middle_name} onChange={e => setHireForm(f => ({ ...f, middle_name: e.target.value }))} />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="label">Дата выхода</label>
+            <input type="date" className="input" value={hireForm.hire_date} onChange={e => setHireForm(f => ({ ...f, hire_date: e.target.value }))} />
+          </div>
+          <div className="grid-2">
+            <div className="form-group">
+              <label className="label">Подразделение</label>
+              <input className="input" value={hireForm.department} onChange={e => setHireForm(f => ({ ...f, department: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="label">Специализация</label>
+              <input className="input" value={hireForm.specialization} onChange={e => setHireForm(f => ({ ...f, specialization: e.target.value }))} />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="label">Комментарий</label>
+            <textarea className="input" rows={2} value={hireForm.comment} onChange={e => setHireForm(f => ({ ...f, comment: e.target.value }))} />
+          </div>
+        </Modal>
       )}
 
       {/* Delete confirm */}

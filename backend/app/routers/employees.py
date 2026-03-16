@@ -10,11 +10,12 @@ from app.services.import_employees import parse_employee_excel
 from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import AssignmentMonthRate, Employee, EmployeeProject, SalaryRecord, User
+from app.models import AssignmentMonthRate, Employee, EmployeeProject, Project, SalaryRecord, User
 from app.services.calc import assignment_active_in_month, get_employee_month_total_rate
 from app.schemas.employee import (
     AssignmentOut,
     EmployeeCreate,
+    EmployeeHire,
     EmployeeImportRow,
     EmployeeListItem,
     EmployeeOut,
@@ -90,6 +91,9 @@ def _build_employee_out(
         comment=emp.comment,
         hire_date=emp.hire_date,
         termination_date=emp.termination_date,
+        planned_exit_date=getattr(emp, "planned_exit_date", None),
+        position_status=getattr(emp, "position_status", None),
+        planned_salary=float(emp.planned_salary) if getattr(emp, "planned_salary", None) is not None else None,
         assignments=assignments,
         salary_records=salary_records,
         has_projects=len(emp.employee_projects) > 0,
@@ -147,6 +151,9 @@ def _build_list_item(
         specialization=emp.specialization,
         hire_date=emp.hire_date,
         termination_date=emp.termination_date,
+        planned_exit_date=getattr(emp, "planned_exit_date", None),
+        position_status=getattr(emp, "position_status", None),
+        planned_salary=float(emp.planned_salary) if getattr(emp, "planned_salary", None) is not None else None,
         assignments=assignments,
         has_projects=has_projects,
         monthly_totals=monthly_totals,
@@ -191,6 +198,7 @@ def list_employees(
             (Employee.first_name.ilike(term))
             | (Employee.last_name.ilike(term))
             | (Employee.middle_name.ilike(term))
+            | (Employee.title.ilike(term))
         )
     if project_id:
         q = q.join(Employee.employee_projects).filter(EmployeeProject.project_id == project_id)
@@ -293,17 +301,68 @@ async def import_employees_excel(
     return {"created": created, "skipped": skipped, "skipped_rows": skipped_rows}
 
 
+def _create_position_assignment_and_salary(
+    db: Session,
+    emp: Employee,
+    planned_exit_date: date,
+    project_id: uuid.UUID,
+    rate: float,
+    planned_salary: float,
+) -> None:
+    """Create one assignment (exit month -> 31 Dec) and salary records for that period."""
+    if db.query(Project).filter(Project.id == project_id).first() is None:
+        raise HTTPException(status_code=400, detail="Project not found")
+    exit_year = planned_exit_date.year
+    exit_month = planned_exit_date.month
+    valid_from = date(exit_year, exit_month, 1)
+    valid_to = date(exit_year, 12, 31)
+    ep = EmployeeProject(
+        employee_id=emp.id,
+        project_id=project_id,
+        rate=rate,
+        valid_from=valid_from,
+        valid_to=valid_to,
+    )
+    db.add(ep)
+    db.flush()
+    for month in range(exit_month, 13):
+        rec = SalaryRecord(
+            employee_id=emp.id,
+            year=exit_year,
+            month=month,
+            salary=planned_salary,
+            kpi_bonus=0,
+            fixed_bonus=0,
+            one_time_bonus=0,
+            is_raise=False,
+        )
+        db.add(rec)
+
+
 @router.post("", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)
 def create_employee(
     body: EmployeeCreate,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    emp = Employee(**body.model_dump())
+    data = body.model_dump(exclude={"project_id", "rate"})
+    if data.get("is_position") and data.get("position_status") is None:
+        data["position_status"] = "awaiting_assignment"
+    emp = Employee(**data)
     db.add(emp)
+    db.flush()
+    if (
+        emp.is_position
+        and body.planned_exit_date
+        and body.project_id is not None
+        and body.rate is not None
+        and body.planned_salary is not None
+    ):
+        _create_position_assignment_and_salary(
+            db, emp, body.planned_exit_date, body.project_id, body.rate, body.planned_salary
+        )
     db.commit()
     db.refresh(emp)
-    # reload with relationships
     emp = (
         db.query(Employee)
         .options(
@@ -380,6 +439,40 @@ def update_employee(
     db.commit()
     db.refresh(emp)
 
+    emp = (
+        db.query(Employee)
+        .options(
+            joinedload(Employee.employee_projects).joinedload(EmployeeProject.project),
+            joinedload(Employee.salary_records),
+        )
+        .filter(Employee.id == employee_id)
+        .first()
+    )
+    return _build_employee_out(emp)
+
+
+@router.post("/{employee_id}/hire", response_model=EmployeeOut)
+def hire_from_position(
+    employee_id: uuid.UUID,
+    body: EmployeeHire,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Convert position to employee: set FIO, hire_date, etc. Position disappears from hiring list."""
+    emp = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if not emp.is_position:
+        raise HTTPException(status_code=400, detail="Not a position; only positions can be hired")
+    updates = body.model_dump(exclude_unset=True)
+    for key, value in updates.items():
+        setattr(emp, key, value)
+    emp.is_position = False
+    emp.planned_exit_date = None
+    emp.position_status = None
+    emp.planned_salary = None
+    db.commit()
+    db.refresh(emp)
     emp = (
         db.query(Employee)
         .options(

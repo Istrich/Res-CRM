@@ -99,6 +99,11 @@ class Employee(Base):
     hire_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     termination_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    # Position-only: planned exit, status, planned salary (for hiring tab and salary records)
+    planned_exit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    position_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    planned_salary: Mapped[float | None] = mapped_column(Numeric(15, 2), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

@@ -1,15 +1,31 @@
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { getProjects } from '../api'
 
 const EMPTY = {
   is_position: false,
   first_name: '', last_name: '', middle_name: '',
   title: '', department: '', specialization: '', comment: '',
   hire_date: '', termination_date: '',
+  planned_exit_date: '', planned_salary: '', project_id: '', rate: '1',
+  position_status: 'awaiting_assignment',
 }
+
+const POSITION_STATUS_OPTIONS = [
+  { value: 'awaiting_assignment', label: 'Ожидает взятия в работу' },
+  { value: 'hiring', label: 'Найм' },
+  { value: 'awaiting_start', label: 'Ожидаем выход' },
+]
 
 export default function EmployeeForm({ initial = {}, onSubmit, loading, submitLabel = 'Сохранить' }) {
   const [form, setForm] = useState({ ...EMPTY, ...initial })
   const [error, setError] = useState('')
+
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => getProjects(),
+    enabled: form.is_position,
+  })
 
   useEffect(() => { setForm({ ...EMPTY, ...initial }) }, [JSON.stringify(initial)])
 
@@ -26,10 +42,14 @@ export default function EmployeeForm({ initial = {}, onSubmit, loading, submitLa
       setError('Дата увольнения не может быть раньше даты найма'); return
     }
     const payload = { ...form }
-    // Clean empty strings to null
-    for (const k of ['first_name','last_name','middle_name','department','specialization','comment','hire_date','termination_date']) {
+    const cleanKeys = ['first_name','last_name','middle_name','department','specialization','comment','hire_date','termination_date','planned_exit_date','planned_salary','project_id']
+    for (const k of cleanKeys) {
       if (!payload[k]) payload[k] = null
     }
+    if (payload.rate !== null && payload.rate !== '') payload.rate = Number(payload.rate)
+    else payload.rate = null
+    if (payload.planned_salary !== null && payload.planned_salary !== '') payload.planned_salary = Number(payload.planned_salary)
+    else payload.planned_salary = null
     onSubmit(payload)
   }
 
@@ -82,6 +102,44 @@ export default function EmployeeForm({ initial = {}, onSubmit, loading, submitLa
           <input className="input" value={form.specialization || ''} onChange={e => set('specialization', e.target.value)} />
         </div>
       </div>
+
+      {form.is_position && (
+        <>
+          <div className="divider" />
+          <div className="form-group">
+            <label className="label">Статус позиции</label>
+            <select className="select" value={form.position_status || 'awaiting_assignment'} onChange={e => set('position_status', e.target.value)}>
+              {POSITION_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="grid-2">
+            <div className="form-group">
+              <label className="label">Плановая дата выхода</label>
+              <input type="date" className="input" value={form.planned_exit_date || ''} onChange={e => set('planned_exit_date', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="label">Оклад</label>
+              <input type="number" className="input" step="0.01" min="0" value={form.planned_salary ?? ''} onChange={e => set('planned_salary', e.target.value)} placeholder="руб." />
+            </div>
+          </div>
+          <div className="grid-2">
+            <div className="form-group">
+              <label className="label">Проект</label>
+              <select className="select" value={form.project_id || ''} onChange={e => set('project_id', e.target.value)}>
+                <option value="">— выберите —</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="label">Ставка в проекте</label>
+              <input type="number" className="input" step="0.1" min="0.1" value={form.rate ?? '1'} onChange={e => set('rate', e.target.value)} />
+            </div>
+          </div>
+          <div className="text-muted text-small" style={{ marginTop: -8, marginBottom: 16 }}>
+            При создании позиция будет добавлена в проект с месяца выхода по конец года с указанным окладом и ставкой.
+          </div>
+        </>
+      )}
 
       {!form.is_position && (
         <div className="grid-2">

@@ -94,6 +94,12 @@ class EmployeeCreate(BaseModel):
     comment: Optional[str] = None
     hire_date: Optional[date] = None
     termination_date: Optional[date] = None
+    # Position-only: when is_position=True, create assignment and salary records
+    planned_exit_date: Optional[date] = None
+    position_status: Optional[str] = None
+    planned_salary: Optional[float] = None
+    project_id: Optional[uuid.UUID] = None
+    rate: Optional[float] = None
 
     @model_validator(mode="after")
     def check_dates(self):
@@ -101,6 +107,9 @@ class EmployeeCreate(BaseModel):
             if self.termination_date < self.hire_date:
                 raise ValueError("termination_date cannot be before hire_date")
         return self
+
+
+POSITION_STATUS_CHOICES = ("awaiting_assignment", "hiring", "awaiting_start")
 
 
 class EmployeeUpdate(BaseModel):
@@ -113,6 +122,9 @@ class EmployeeUpdate(BaseModel):
     comment: Optional[str] = None
     hire_date: Optional[date] = None
     termination_date: Optional[date] = None
+    position_status: Optional[str] = None
+    planned_exit_date: Optional[date] = None
+    planned_salary: Optional[float] = None
 
     @model_validator(mode="after")
     def check_dates(self):
@@ -120,6 +132,17 @@ class EmployeeUpdate(BaseModel):
             if self.termination_date < self.hire_date:
                 raise ValueError("termination_date cannot be before hire_date")
         return self
+
+
+class EmployeeHire(BaseModel):
+    """Convert position to employee: set FIO and hire_date."""
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    hire_date: Optional[date] = None
+    department: Optional[str] = None
+    specialization: Optional[str] = None
+    comment: Optional[str] = None
 
 
 class EmployeeOut(BaseModel):
@@ -135,6 +158,9 @@ class EmployeeOut(BaseModel):
     comment: Optional[str]
     hire_date: Optional[date]
     termination_date: Optional[date]
+    planned_exit_date: Optional[date] = None
+    position_status: Optional[str] = None
+    planned_salary: Optional[float] = None
     assignments: list[AssignmentOut] = []
     salary_records: list[SalaryRecordOut] = []
     has_projects: bool
@@ -155,6 +181,9 @@ class EmployeeListItem(BaseModel):
     specialization: Optional[str]
     hire_date: Optional[date]
     termination_date: Optional[date]
+    planned_exit_date: Optional[date] = None
+    position_status: Optional[str] = None
+    planned_salary: Optional[float] = None
     assignments: list[AssignmentOut] = []
     has_projects: bool
     monthly_totals: Optional[list[float]] = None  # 12 values for the requested year (Jan..Dec)

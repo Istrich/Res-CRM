@@ -82,6 +82,62 @@ class TestEmployeesCRUD:
         data = r.json()
         assert data["is_position"] is True
         assert "Позиция" in data["display_name"] or data["first_name"] is None
+        assert data.get("position_status") == "awaiting_assignment"
+
+    def test_create_position_with_project_and_salary(self, authed_client, make_project):
+        """Creating a position with planned_exit_date, project_id, rate, planned_salary creates assignment and salary records."""
+        proj = make_project(name="Backend Team")
+        r = authed_client.post("/employees", json={
+            "is_position": True,
+            "title": "Backend Dev",
+            "planned_exit_date": "2024-06-15",
+            "project_id": str(proj.id),
+            "rate": 1.0,
+            "planned_salary": 120_000.0,
+        })
+        assert r.status_code == 201
+        data = r.json()
+        assert data["is_position"] is True
+        assert data["planned_exit_date"] == "2024-06-15"
+        assert data["planned_salary"] == 120_000.0
+        assert len(data["assignments"]) == 1
+        assert data["assignments"][0]["project_id"] == str(proj.id)
+        assert data["assignments"][0]["rate"] == 1.0
+        assert data["assignments"][0]["valid_from"] == "2024-06-01"
+        assert data["assignments"][0]["valid_to"] == "2024-12-31"
+        assert len(data["salary_records"]) == 7  # Jun..Dec
+        for rec in data["salary_records"]:
+            assert rec["year"] == 2024
+            assert rec["salary"] == 120_000.0
+
+    def test_hire_from_position(self, authed_client, make_employee):
+        """POST /employees/{id}/hire converts position to employee; position disappears from hiring list."""
+        pos = make_employee(is_position=True, first_name=None, last_name=None)
+        r = authed_client.post(f"/employees/{pos.id}/hire", json={
+            "first_name": "Мария",
+            "last_name": "Сидорова",
+            "hire_date": "2024-07-01",
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["is_position"] is False
+        assert data["first_name"] == "Мария"
+        assert data["last_name"] == "Сидорова"
+        assert data["hire_date"] == "2024-07-01"
+        assert data.get("planned_exit_date") is None
+        assert data.get("position_status") is None
+        assert data.get("planned_salary") is None
+
+        r2 = authed_client.get("/employees?is_position=true")
+        assert r2.status_code == 200
+        ids = [e["id"] for e in r2.json()]
+        assert str(pos.id) not in ids
+
+    def test_hire_from_employee_rejected(self, authed_client, make_employee):
+        """Hire endpoint only works for positions."""
+        emp = make_employee()
+        r = authed_client.post(f"/employees/{emp.id}/hire", json={"first_name": "X", "last_name": "Y"})
+        assert r.status_code == 400
 
     def test_create_employee_title_required(self, authed_client):
         r = authed_client.post("/employees", json={"first_name": "Иван"})

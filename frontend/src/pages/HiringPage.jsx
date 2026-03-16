@@ -1,13 +1,21 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getEmployees } from '../api'
 import { useYearStore } from '../store/year'
+import { fmtDate, fmt } from '../utils'
+
+const POSITION_STATUS_LABELS = {
+  awaiting_assignment: 'Ожидает взятия в работу',
+  hiring: 'Найм',
+  awaiting_start: 'Ожидаем выход',
+}
 
 export default function HiringPage() {
   const navigate = useNavigate()
   const { year, month } = useYearStore()
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
 
   const { data: positions = [], isLoading } = useQuery({
     queryKey: ['employees', 'positions', year, month, search],
@@ -19,12 +27,17 @@ export default function HiringPage() {
     }),
   })
 
+  const filtered = useMemo(() => {
+    if (!statusFilter) return positions
+    return positions.filter((p) => (p.position_status || '') === statusFilter)
+  }, [positions, statusFilter])
+
   return (
     <div>
       <div className="page-header">
         <div>
           <div className="page-title">Найм</div>
-          <div className="page-subtitle">Позиции ({positions.length})</div>
+          <div className="page-subtitle">Позиции ({filtered.length})</div>
         </div>
       </div>
 
@@ -33,11 +46,22 @@ export default function HiringPage() {
           <div className="search-bar" style={{ width: 260 }}>
             🔍
             <input
-              placeholder="Поиск по названию позиции..."
+              placeholder="Поиск по должности..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <select
+            className="select"
+            style={{ width: 220 }}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="">Все статусы</option>
+            {Object.entries(POSITION_STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -45,60 +69,65 @@ export default function HiringPage() {
         <table>
           <thead>
             <tr>
-              <th className="th">Позиция</th>
+              <th className="th">Статус</th>
               <th className="th">Должность</th>
               <th className="th">Подразделение</th>
               <th className="th">Специализация</th>
-              <th className="th">В проектах</th>
+              <th className="th">Плановая дата выхода</th>
+              <th className="th">Оклад</th>
+              <th className="th">Проект</th>
+              <th className="th">Ставка</th>
               <th className="th" />
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td className="td" colSpan={6} style={{ textAlign: 'center' }}>
+                <td className="td" colSpan={9} style={{ textAlign: 'center' }}>
                   <span className="spinner" />
                 </td>
               </tr>
             )}
-            {!isLoading && positions.length === 0 && (
+            {!isLoading && filtered.length === 0 && (
               <tr>
-                <td className="td" colSpan={6}>
+                <td className="td" colSpan={9}>
                   <div className="empty-state">Нет позиций</div>
                 </td>
               </tr>
             )}
-            {positions.map((pos) => (
+            {filtered.map((pos) => (
               <tr
                 key={pos.id}
                 style={{ cursor: 'pointer' }}
                 onClick={() => navigate(`/employees/${pos.id}`)}
               >
-                <td className="td" style={{ minWidth: 180 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span className="badge badge-amber">Позиция</span>
-                    <span className="fw-500">{pos.display_name}</span>
-                  </div>
+                <td className="td">
+                  <span className="badge badge-amber">
+                    {POSITION_STATUS_LABELS[pos.position_status] || pos.position_status || '—'}
+                  </span>
                 </td>
-                <td className="td">{pos.title}</td>
+                <td className="td fw-500" style={{ minWidth: 160 }}>{pos.title}</td>
                 <td className="td text-muted">{pos.department || '—'}</td>
                 <td className="td text-muted">{pos.specialization || '—'}</td>
-                <td className="td" style={{ minWidth: 160 }}>
-                  {pos.assignments.length === 0
-                    ? <span className="text-muted">—</span>
-                    : pos.assignments.map((a) => (
-                      <div key={a.id} style={{ fontSize: 12 }}>
-                        {a.project_name} <span className="text-muted">×{a.rate}</span>
-                      </div>
-                    ))}
+                <td className="td text-muted">{fmtDate(pos.planned_exit_date)}</td>
+                <td className="td">{pos.planned_salary != null ? fmt(pos.planned_salary) : '—'}</td>
+                <td className="td" style={{ minWidth: 140 }}>
+                  {pos.assignments.length === 0 ? '—' : pos.assignments.map((a) => (
+                    <div key={a.id} style={{ fontSize: 12 }}>{a.project_name}</div>
+                  ))}
+                </td>
+                <td className="td">
+                  {pos.assignments.length === 0 ? '—' : pos.assignments.map((a) => (
+                    <span key={a.id}>×{a.rate}</span>
+                  ))}
                 </td>
                 <td className="td">
                   <button
                     type="button"
-                    className="btn btn-ghost btn-sm"
+                    className="btn btn-primary btn-sm"
                     onClick={(e) => { e.stopPropagation(); navigate(`/employees/${pos.id}`) }}
                   >
-                    Открыть →
+                    Нанять / Открыть
                   </button>
                 </td>
               </tr>

@@ -15,6 +15,7 @@ export const importEmployeesExcel = (file) => {
   return api.post('/employees/import/excel', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data)
 }
 export const updateEmployee = (id, data) => api.patch(`/employees/${id}`, data).then(r => r.data)
+export const hireFromPosition = (id, data) => api.post(`/employees/${id}/hire`, data).then(r => r.data)
 export const deleteEmployee = (id) => api.delete(`/employees/${id}`)
 export const deleteAllEmployees = () => api.delete('/employees/all').then(r => r.data)
 

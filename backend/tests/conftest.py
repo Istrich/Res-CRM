@@ -4,6 +4,12 @@ Shared pytest fixtures.
 Uses SQLite in-memory database — no PostgreSQL needed for tests.
 All fixtures are function-scoped by default (fresh DB per test).
 """
+import os
+
+# Set before any app import so lifespan and engine use SQLite
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ.setdefault("SECRET_KEY", "test-secret-key")
+
 import uuid
 from datetime import date
 from typing import Generator
