@@ -518,6 +518,30 @@ class TestGetProjectBudgetSummary:
         expected_remaining = float(bp.total_budget) - summary["forecast"]
         assert summary["remaining"] == pytest.approx(expected_remaining)
 
+    @freeze_time("2024-06-15")
+    def test_project_own_plan_used_for_remaining_and_status(self, db, make_budget_project, make_project, make_employee,
+                                                             make_assignment, make_salary):
+        """If project has its own month plan, remaining/status are based on that plan, not on budget_project.total_budget."""
+        bp = make_budget_project(total_budget=10_000_000)  # big envelope
+        proj = make_project(budget_project=bp)
+        emp = make_employee()
+        make_assignment(emp, proj, rate=1.0)
+        for m in range(1, 13):
+            make_salary(emp, year=2024, month=m, salary=100_000, kpi=0, fixed=0, one_time=0)
+
+        from app.services.budget_plan import set_project_own_month_plan
+
+        # Project-level annual plan 1_000_000
+        items = [{"month": m, "amount": (1_000_000 / 12)} for m in range(1, 13)]
+        set_project_own_month_plan(db, proj.id, 2024, items)
+
+        recalculate_year(db, 2024)
+        summary = get_project_budget_summary(db, proj.id, 2024, project=proj)
+
+        # Forecast approx 1.2M > 1.0M → overrun relative to project plan despite huge budget_project.total_budget
+        assert summary["forecast"] == pytest.approx(1_200_000.0, rel=0.01)
+        assert summary["status"] == "overrun"
+
     def test_no_budget_no_status(self, db, make_project, make_budget_project):
         bp = make_budget_project(total_budget=None)
         proj = make_project(budget_project=bp)

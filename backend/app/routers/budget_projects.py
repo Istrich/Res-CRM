@@ -9,11 +9,17 @@ from app.dependencies import get_current_user
 from app.models import BudgetProject, User
 from app.schemas.project import (
     BudgetProjectCreate,
+    BudgetProjectMonthPlanIn,
+    BudgetProjectMonthPlanOut,
     BudgetProjectOut,
     BudgetProjectUpdate,
     BudgetProjectWithStats,
 )
 from app.services.calc import get_budget_project_summary
+from app.services.budget_plan import (
+    get_budget_project_month_plan,
+    set_budget_project_month_plan,
+)
 
 router = APIRouter(prefix="/budget-projects", tags=["budget-projects"])
 
@@ -60,7 +66,46 @@ def create_budget_project(
     db.add(bp)
     db.commit()
     db.refresh(bp)
+    if body.total_budget is not None and body.total_budget > 0:
+        total = float(body.total_budget)
+        per_month = round(total / 12, 2)
+        rest = round(total - per_month * 12, 2)
+        items_data = [
+            {"month": m, "amount": per_month + (rest if m == 1 else 0)}
+            for m in range(1, 13)
+        ]
+        set_budget_project_month_plan(db, bp.id, bp.year, items_data)
     return bp
+
+
+@router.get("/{bp_id}/month-plan", response_model=BudgetProjectMonthPlanOut)
+def get_budget_project_month_plan_route(
+    bp_id: uuid.UUID,
+    year: int = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    bp = db.query(BudgetProject).filter(BudgetProject.id == bp_id).first()
+    if not bp:
+        raise HTTPException(status_code=404, detail="Budget project not found")
+    items = get_budget_project_month_plan(db, bp_id, year)
+    return BudgetProjectMonthPlanOut(items=items)
+
+
+@router.put("/{bp_id}/month-plan", response_model=BudgetProjectMonthPlanOut)
+def put_budget_project_month_plan(
+    bp_id: uuid.UUID,
+    year: int = Query(...),
+    body: BudgetProjectMonthPlanIn = ...,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    bp = db.query(BudgetProject).filter(BudgetProject.id == bp_id).first()
+    if not bp:
+        raise HTTPException(status_code=404, detail="Budget project not found")
+    items_data = [{"month": x.month, "amount": x.amount} for x in body.items]
+    items = set_budget_project_month_plan(db, bp_id, year, items_data)
+    return BudgetProjectMonthPlanOut(items=items)
 
 
 @router.get("/{bp_id}", response_model=BudgetProjectWithStats)

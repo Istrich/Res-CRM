@@ -5,7 +5,7 @@ import {
   getProject, updateProject, deleteProject,
   getProjectEmployees, removeEmployeeFromProject, setAssignmentRate, updateAssignment,
   getProjectBudget, getEmployees, createAssignment,
-  getBudgetProjects,
+  getBudgetProjects, getProjectMonthPlan, putProjectMonthPlan,
 } from '../api'
 import { useYearStore } from '../store/year'
 import { fmt, fmtDate, MONTHS, statusLabel, statusColor } from '../utils'
@@ -25,6 +25,8 @@ export default function ProjectDetailPage() {
   const [removeTarget, setRemoveTarget] = useState(null)
   const [editForm, setEditForm] = useState(null)
   const [rateWarning, setRateWarning] = useState(null) // { displayName, monthName, total }
+  const [monthPlanDraft, setMonthPlanDraft] = useState(null)
+  const [monthPlanSaving, setMonthPlanSaving] = useState(false)
 
   const { data: project } = useQuery({
     queryKey: ['project', id, year],
@@ -49,6 +51,46 @@ export default function ProjectDetailPage() {
     queryKey: ['budget-projects-list'],
     queryFn: getBudgetProjects,
   })
+
+  const { data: projectMonthPlanData } = useQuery({
+    queryKey: ['project-month-plan', id, year],
+    queryFn: () => getProjectMonthPlan(id, year),
+    enabled: Boolean(id && year),
+  })
+
+  useEffect(() => {
+    if (monthPlanDraft === null && (projectMonthPlanData?.items?.length || budget?.monthly_plan?.length)) {
+      const src = projectMonthPlanData?.items || budget?.monthly_plan || []
+      const arr = Array(12).fill(0)
+      src.forEach(({ month, amount }) => { if (month >= 1 && month <= 12) arr[month - 1] = amount })
+      setMonthPlanDraft(arr)
+    }
+  }, [projectMonthPlanData?.items, budget?.monthly_plan, monthPlanDraft])
+
+  function distributeProjectPlanEvenly() {
+    const total = monthPlanDraft
+      ? monthPlanDraft.reduce((s, v) => s + (Number(v) || 0), 0)
+      : 0
+    if (total <= 0) return
+    const perMonth = Math.round((total / 12) * 100) / 100
+    const rest = Math.round((total - perMonth * 12) * 100) / 100
+    setMonthPlanDraft(Array(12).fill(perMonth).map((v, i) => (i === 0 ? v + rest : v)))
+  }
+
+  async function saveProjectMonthPlan() {
+    if (!monthPlanDraft || monthPlanDraft.length !== 12) return
+    setMonthPlanSaving(true)
+    try {
+      const items = monthPlanDraft.map((amount, i) => ({ month: i + 1, amount: Number(amount) || 0 }))
+      await putProjectMonthPlan(id, year, items)
+      qc.invalidateQueries({ queryKey: ['project-budget', id, year] })
+      qc.invalidateQueries({ queryKey: ['project-month-plan', id, year] })
+    } catch (e) {
+      alert(e.response?.data?.detail || 'Не удалось сохранить план проекта')
+    } finally {
+      setMonthPlanSaving(false)
+    }
+  }
 
   const updateMut = useMutation({
     mutationFn: (data) => updateProject(id, data),
@@ -149,33 +191,109 @@ export default function ProjectDetailPage() {
         )}
       </div>
 
-      {/* Monthly budget breakdown */}
+      {/* Monthly budget breakdown: plan, fact, deviation */}
       {budget?.monthly?.length > 0 && (
         <div className="card" style={{ padding: '16px 20px', marginBottom: 20 }}>
           <div className="fw-600" style={{ marginBottom: 12 }}>Расходы по месяцам {year}</div>
+          {year && (
+            <div className="text-small text-muted" style={{ marginBottom: 8 }}>
+              Если задать помесячный план ниже, он будет иметь приоритет над планом бюджетного проекта.
+            </div>
+          )}
           <div className="overflow-table">
             <table>
               <thead>
                 <tr>
+                  <th className="th"> </th>
                   {MONTHS.map((m, i) => <th className="th text-right" key={i} style={i === new Date().getMonth() ? { background: '#fef9c3' } : undefined}>{m}</th>)}
                   <th className="th text-right fw-600">Итого</th>
                 </tr>
               </thead>
               <tbody>
+                {budget.monthly_plan && budget.monthly_plan.length === 12 && (
+                  <tr>
+                    <td className="td fw-500">План</td>
+                    {budget.monthly_plan.map(p => (
+                      <td className="td text-right" key={p.month}>{fmt(p.amount)}</td>
+                    ))}
+                    <td className="td text-right fw-600">{fmt(budget.monthly_plan.reduce((s, p) => s + (p?.amount || 0), 0))}</td>
+                  </tr>
+                )}
                 <tr>
-                  {budget.monthly.map(s => (
-                    <td className="td text-right" key={s.month} style={{ color: s.is_forecast ? 'var(--text-3)' : 'inherit' }}>
-                      {fmt(s.amount)}
-                    </td>
-                  ))}
+                  <td className="td fw-500">Факт / прогноз</td>
+                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(month => {
+                    const s = budget.monthly?.find(m => m.month === month)
+                    return (
+                      <td className="td text-right" key={month} style={{ color: s?.is_forecast ? 'var(--text-3)' : 'inherit' }}>
+                        {s ? fmt(s.amount) : '—'}
+                      </td>
+                    )
+                  })}
                   <td className="td text-right fw-600">{fmt(budget.forecast)}</td>
                 </tr>
+                {budget.monthly_diff && budget.monthly_diff.length === 12 && (
+                  <tr>
+                    <td className="td fw-500">Отклонение</td>
+                    {budget.monthly_diff.map(d => (
+                      <td className="td text-right" key={d.month} style={{ color: d.diff > 0 ? 'var(--red)' : d.diff < 0 ? 'var(--green)' : undefined }}>
+                        {d.diff > 0 ? '+' : ''}{fmt(d.diff)}
+                      </td>
+                    ))}
+                    <td className="td text-right fw-600" style={{ color: budget.remaining != null && budget.remaining < 0 ? 'var(--red)' : budget.remaining > 0 ? 'var(--green)' : undefined }}>
+                      {budget.remaining != null ? fmt(budget.remaining) : '—'}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
           <div className="text-small text-muted" style={{ marginTop: 8 }}>
             Серым — прогноз. Последний расчёт: {budget.last_calculated_at ? new Date(budget.last_calculated_at).toLocaleString('ru-RU') : '—'}
           </div>
+
+          {/* Project-level plan editor */}
+          {year != null && (
+            <div style={{ marginTop: 16 }}>
+              <div className="fw-600" style={{ marginBottom: 8 }}>План проекта по месяцам</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                {MONTHS.map((label, i) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ minWidth: 28, fontSize: 12 }}>{label}</span>
+                    <input
+                      type="number"
+                      className="input"
+                      style={{ width: 88 }}
+                      value={monthPlanDraft?.[i] ?? (projectMonthPlanData?.items?.[i]?.amount ?? '')}
+                      onChange={e => {
+                        const v = e.target.value
+                        setMonthPlanDraft(prev => {
+                          const base = prev || (projectMonthPlanData?.items
+                            ? projectMonthPlanData.items.map(p => p.amount)
+                            : Array(12).fill(0))
+                          const arr = [...base]
+                          arr[i] = v
+                          return arr
+                        })
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={distributeProjectPlanEvenly}>
+                  Равномерно
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={monthPlanSaving || !monthPlanDraft}
+                  onClick={saveProjectMonthPlan}
+                >
+                  {monthPlanSaving ? <span className="spinner" /> : 'Сохранить план проекта'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

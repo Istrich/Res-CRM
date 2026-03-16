@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getBudgetProject, updateBudgetProject, deleteBudgetProject,
-  getBudgetProjectBudget,
+  getBudgetProjectBudget, getBudgetProjectMonthPlan, putBudgetProjectMonthPlan,
 } from '../api'
 import { useYearStore } from '../store/year'
 import { fmt, MONTHS, statusLabel, statusColor } from '../utils'
@@ -19,6 +19,8 @@ export default function BudgetProjectDetailPage() {
   const [editModal, setEditModal] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [editForm, setEditForm] = useState(null)
+  const [monthPlanDraft, setMonthPlanDraft] = useState(null) // [a1..a12] or null
+  const [monthPlanSaving, setMonthPlanSaving] = useState(false)
 
   const { data: bp, isLoading: bpLoading } = useQuery({
     queryKey: ['budget-project', id, year],
@@ -50,6 +52,48 @@ export default function BudgetProjectDetailPage() {
     onSuccess: () => navigate('/budget-projects'),
     onError: (e) => { alert(e.response?.data?.detail || 'Не удалось удалить') },
   })
+
+  const { data: monthPlanData } = useQuery({
+    queryKey: ['budget-project-month-plan', id, year],
+    queryFn: () => getBudgetProjectMonthPlan(id, year),
+    enabled: Boolean(id && year),
+  })
+
+  useEffect(() => {
+    if (monthPlanDraft === null && (budget?.monthly_plan?.length || monthPlanData?.items?.length)) {
+      const src = budget?.monthly_plan || monthPlanData?.items || []
+      const arr = Array(12).fill(0)
+      src.forEach(({ month, amount }) => { if (month >= 1 && month <= 12) arr[month - 1] = amount })
+      setMonthPlanDraft(arr)
+    }
+  }, [budget?.monthly_plan, monthPlanData?.items])
+
+  function distributeEvenly() {
+    const total = monthPlanDraft
+      ? monthPlanDraft.reduce((s, v) => s + (Number(v) || 0), 0)
+      : (bp?.total_budget || 0)
+    if (total <= 0) return
+    const perMonth = Math.round((total / 12) * 100) / 100
+    const rest = Math.round((total - perMonth * 12) * 100) / 100
+    setMonthPlanDraft(Array(12).fill(perMonth).map((v, i) => (i === 0 ? v + rest : v)))
+  }
+
+  async function saveMonthPlan() {
+    if (!monthPlanDraft || monthPlanDraft.length !== 12) return
+    setMonthPlanSaving(true)
+    try {
+      const items = monthPlanDraft.map((amount, i) => ({ month: i + 1, amount: Number(amount) || 0 }))
+      await putBudgetProjectMonthPlan(id, year, items)
+      qc.invalidateQueries({ queryKey: ['budget-project', id] })
+      qc.invalidateQueries({ queryKey: ['budget-project-budget', id, year] })
+      qc.invalidateQueries({ queryKey: ['budget-project-month-plan', id, year] })
+      qc.invalidateQueries({ queryKey: ['budget-projects'] })
+    } catch (e) {
+      alert(e.response?.data?.detail || 'Не удалось сохранить план')
+    } finally {
+      setMonthPlanSaving(false)
+    }
+  }
 
   if (bpLoading) return <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
   if (!bp) return <div className="empty-state">Бюджетный проект не найден</div>
@@ -100,6 +144,89 @@ export default function BudgetProjectDetailPage() {
           ))}
         </div>
       </div>
+
+      {/* Month plan edit */}
+      <div className="card" style={{ padding: '16px 20px', marginBottom: 20 }}>
+        <div className="fw-600" style={{ marginBottom: 12 }}>План по месяцам ({year})</div>
+        <p className="text-muted text-small" style={{ marginBottom: 12 }}>
+          Распределите бюджет по месяцам. Годовой бюджет обновится как сумма помесячных планов.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+          {MONTHS.map((label, i) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ minWidth: 28, fontSize: 12 }}>{label}</span>
+                <input
+                type="number"
+                className="input"
+                style={{ width: 88 }}
+                value={monthPlanDraft?.[i] ?? (budget?.monthly_plan?.[i]?.amount ?? '')}
+                onChange={e => {
+                  const v = e.target.value
+                  setMonthPlanDraft(prev => {
+                    const base = prev || (budget?.monthly_plan ? budget.monthly_plan.map(p => p.amount) : Array(12).fill(0))
+                    const arr = [...base]
+                    arr[i] = v
+                    return arr
+                  })
+                }}
+              />
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={distributeEvenly}>
+            Равномерно
+          </button>
+          <button type="button" className="btn btn-primary btn-sm" onClick={saveMonthPlan} disabled={monthPlanSaving || !monthPlanDraft}>
+            {monthPlanSaving ? <span className="spinner" /> : 'Сохранить план'}
+          </button>
+        </div>
+      </div>
+
+      {/* Plan vs Fact by month */}
+      {budget?.monthly_diff && budget.monthly_diff.length > 0 && (
+        <div className="card" style={{ padding: '16px 20px', marginBottom: 20 }}>
+          <div className="fw-600" style={{ marginBottom: 12 }}>План и факт по месяцам</div>
+          <div className="overflow-table">
+            <table>
+              <thead>
+                <tr>
+                  <th className="th">Месяц</th>
+                  {MONTHS.map((m, i) => <th className="th text-right" key={i}>{m}</th>)}
+                  <th className="th text-right fw-600">Итого</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="td fw-500">План</td>
+                  {budget.monthly_plan?.map(p => (
+                    <td className="td text-right" key={p.month}>{fmt(p.amount)}</td>
+                  ))}
+                  <td className="td text-right fw-600">{fmt(budget.monthly_plan?.reduce((s, p) => s + (p?.amount || 0), 0))}</td>
+                </tr>
+                <tr>
+                  <td className="td fw-500">Факт / прогноз</td>
+                  {budget.monthly_fact?.map(f => (
+                    <td className="td text-right" key={f.month}>{fmt(f.amount)}</td>
+                  ))}
+                  <td className="td text-right fw-600">{fmt(budget.forecast)}</td>
+                </tr>
+                <tr>
+                  <td className="td fw-500">Отклонение</td>
+                  {budget.monthly_diff.map(d => (
+                    <td className="td text-right" key={d.month} style={{ color: d.diff > 0 ? 'var(--red)' : d.diff < 0 ? 'var(--green)' : undefined }}>
+                      {d.diff > 0 ? '+' : ''}{fmt(d.diff)}
+                    </td>
+                  ))}
+                  <td className="td text-right fw-600" style={{ color: budget.remaining != null && budget.remaining < 0 ? 'var(--red)' : budget.remaining > 0 ? 'var(--green)' : undefined }}>
+                    {budget.remaining != null ? fmt(budget.remaining) : '—'}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Projects breakdown */}
       {budget?.projects?.length > 0 && (

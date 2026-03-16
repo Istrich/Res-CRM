@@ -37,6 +37,19 @@ class BudgetProjectWithStats(BudgetProjectOut):
     status: str = "ok"  # ok | warning | overrun
 
 
+class BudgetMonthItem(BaseModel):
+    month: int  # 1-12
+    amount: float = 0
+
+
+class BudgetProjectMonthPlanIn(BaseModel):
+    items: list[BudgetMonthItem]  # 12 items, month 1..12
+
+
+class BudgetProjectMonthPlanOut(BaseModel):
+    items: list[BudgetMonthItem]
+
+
 class ProjectCreate(BaseModel):
     name: str
     budget_project_id: Optional[uuid.UUID] = None

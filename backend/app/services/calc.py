@@ -16,7 +16,16 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.models import AssignmentMonthRate, BudgetProject, BudgetSnapshot, Employee, EmployeeProject, Project, SalaryRecord
+from app.models import (
+    AssignmentMonthRate,
+    BudgetProject,
+    BudgetSnapshot,
+    Employee,
+    EmployeeProject,
+    Project,
+    ProjectMonthPlan,
+    SalaryRecord,
+)
 
 
 def _month_start(year: int, month: int) -> date:
@@ -259,8 +268,21 @@ def get_project_budget_summary(
     if project is None:
         project = db.get(Project, project_id)
     budget = None
-    if project and project.budget_project:
-        budget = float(project.budget_project.total_budget) if project.budget_project.total_budget else None
+    if project:
+        # If project has its own month plan for this year, use sum of that plan
+        own_rows = (
+            db.query(ProjectMonthPlan)
+            .filter(
+                ProjectMonthPlan.project_id == project.id,
+                ProjectMonthPlan.year == year,
+            )
+            .all()
+        )
+        if own_rows:
+            budget = sum(float(r.amount) for r in own_rows)
+        elif project.budget_project and project.budget_project.total_budget:
+            # Fallback to envelope of budget project if there is no project-level plan
+            budget = float(project.budget_project.total_budget)
 
     remaining = (budget - total_forecast) if budget is not None else None
 

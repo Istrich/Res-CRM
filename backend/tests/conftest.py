@@ -23,8 +23,8 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base, get_db
 from app.main import app
 from app.models import (
-    BudgetProject, BudgetSnapshot, Employee, EmployeeProject, Project,
-    SalaryRecord, User,
+    BudgetProject, BudgetProjectMonthPlan, BudgetSnapshot, Employee,
+    EmployeeProject, Project, SalaryRecord, User,
 )
 from app.services.auth import hash_password, create_access_token
 

@@ -53,11 +53,11 @@ Res-CRM/
 │   │   ├── config.py         # pydantic-settings
 │   │   ├── database.py       # SQLAlchemy engine, SessionLocal
 │   │   ├── dependencies.py   # get_current_user (JWT)
-│   │   ├── models/           # ORM: User, BudgetProject, Project, Employee, EmployeeProject, AssignmentMonthRate, SalaryRecord, BudgetSnapshot
+│   │   ├── models/           # ORM: User, BudgetProject, BudgetProjectMonthPlan, Project, Employee, EmployeeProject, AssignmentMonthRate, SalaryRecord, BudgetSnapshot
 │   │   ├── schemas/          # Pydantic (employee, project, assignment, auth)
 │   │   ├── routers/          # auth, employees, projects, budget_projects, assignments, budgets, dashboard, exports
-│   │   └── services/         # auth.py, calc.py, export.py, import_employees.py
-│   ├── migrations/           # Alembic (0001_initial, 0002_assignment_month_rates, 0003_salary_record_is_raise)
+│   │   └── services/         # auth.py, calc.py, budget_plan.py, export.py, import_employees.py
+│   ├── migrations/           # Alembic (0001..0005_budget_project_month_plans)
 │   ├── requirements.txt
 │   └── .env                  # DATABASE_URL, SECRET_KEY, ADMIN_*
 │
@@ -89,6 +89,8 @@ Res-CRM/
 | `assignment_month_rates` | Переопределение ставки по месяцам (assignment_id, year, month, rate) |
 | `salary_records` | Вознаграждение по месяцам: salary, kpi_bonus, fixed_bonus, one_time_bonus, is_raise |
 | `budget_snapshots` | Кэш расхода по проекту/месяцу (amount, is_forecast) |
+| `project_month_plans` | Собственный помесячный план проекта (project_id, year, month, amount) |
+| `budget_project_month_plans` | Помесячный план бюджета (budget_project_id, year, month, amount) |
 
 ---
 
@@ -108,8 +110,9 @@ Res-CRM/
 - **Сотрудники:** список с фильтрами, карточка, ЗП по месяцам (в т.ч. «Повышение» — зелёная подсветка), назначения на проекты, импорт (вставка таблицы / Excel), экспорт, временная кнопка «Удалить всех».
 - **Найм:** вкладка со списком только позиций (`is_position=true`).
 - **Проекты:** список, карточка проекта, участники, ставки по месяцам (12 колонок), предупреждение при сумме ставок ≠ 1.
-- **Бюджетные проекты:** список за год, карточка, привязка проектов.
+- **Бюджетные проекты:** список за год, карточка, привязка проектов, **помесячный план** (12 полей, «Равномерно», «Сохранить план»), таблица план vs факт по месяцам.
 - **Бюджеты:** пересчёт, сводка, экспорты (проекты, бюджетные, ФОТ).
+- **Проект (карточка):** расходы по месяцам с планом и отклонением (если проект входит в бюджетный проект с помесячным планом).
 - **Дашборд:** сводки по году, по проектам, подразделениям, специализациям, движение персонала.
 
 ---

@@ -9,6 +9,11 @@ from app.dependencies import get_current_user
 from app.models import AssignmentMonthRate, Employee, EmployeeProject, Project, User
 from app.schemas.employee import AssignmentOut, EmployeeListItem
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate, ProjectWithStats
+from app.services.budget_plan import (
+    get_project_month_plan,
+    get_project_own_month_plan,
+    set_project_own_month_plan,
+)
 from app.services.calc import assignment_active_in_month, get_employee_month_total_rate, get_project_budget_summary
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -89,6 +94,46 @@ def get_project(
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
     return _project_with_stats(db, proj, year)
+
+
+@router.get("/{project_id}/month-plan")
+def get_project_month_plan_route(
+    project_id: uuid.UUID,
+    year: int = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    proj = db.query(Project).filter(Project.id == project_id).first()
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    items = get_project_own_month_plan(db, project_id, year) or get_project_month_plan(
+        db, project_id, year
+    )
+    # If nothing configured at all, return zeros
+    if not items:
+        items = [{"month": m, "amount": 0.0} for m in range(1, 13)]
+    return {"items": items}
+
+
+@router.put("/{project_id}/month-plan")
+def put_project_month_plan_route(
+    project_id: uuid.UUID,
+    year: int = Query(...),
+    body: dict = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    proj = db.query(Project).filter(Project.id == project_id).first()
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    items_raw = (body or {}).get("items") or []
+    items_data = [
+        {"month": int(it.get("month")), "amount": float(it.get("amount", 0) or 0)}
+        for it in items_raw
+        if isinstance(it.get("month"), int) and 1 <= it.get("month") <= 12
+    ]
+    items = set_project_own_month_plan(db, project_id, year, items_data)
+    return {"items": items}
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)

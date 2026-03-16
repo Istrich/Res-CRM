@@ -42,6 +42,31 @@ class BudgetProject(Base):
     )
 
     projects: Mapped[list["Project"]] = relationship("Project", back_populates="budget_project")
+    month_plans: Mapped[list["BudgetProjectMonthPlan"]] = relationship(
+        "BudgetProjectMonthPlan", back_populates="budget_project", cascade="all, delete-orphan"
+    )
+
+
+# ---------------------------------------------------------------------------
+# BudgetProjectMonthPlan — monthly budget plan per budget project / year
+# ---------------------------------------------------------------------------
+
+class BudgetProjectMonthPlan(Base):
+    __tablename__ = "budget_project_month_plans"
+    __table_args__ = (
+        UniqueConstraint("budget_project_id", "year", "month", name="uq_bp_month_plan"),
+        CheckConstraint("month BETWEEN 1 AND 12", name="chk_month_plan_1_12"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    budget_project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("budget_projects.id", ondelete="CASCADE"), nullable=False
+    )
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+
+    budget_project: Mapped["BudgetProject"] = relationship("BudgetProject", back_populates="month_plans")
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +92,10 @@ class Project(Base):
     )
     budget_snapshots: Mapped[list["BudgetSnapshot"]] = relationship(
         "BudgetSnapshot", back_populates="project", cascade="all, delete-orphan"
+    )
+
+    month_plans: Mapped[list["ProjectMonthPlan"]] = relationship(
+        "ProjectMonthPlan", back_populates="project", cascade="all, delete-orphan"
     )
 
 
@@ -214,6 +243,29 @@ class SalaryRecord(Base):
     def total(self) -> float:
         s = Decimal(str(self.salary)) + Decimal(str(self.kpi_bonus)) + Decimal(str(self.fixed_bonus)) + Decimal(str(self.one_time_bonus))
         return float(s)
+
+
+# ---------------------------------------------------------------------------
+# ProjectMonthPlan — monthly budget plan per project / year
+# ---------------------------------------------------------------------------
+
+
+class ProjectMonthPlan(Base):
+    __tablename__ = "project_month_plans"
+    __table_args__ = (
+        UniqueConstraint("project_id", "year", "month", name="uq_project_month_plan"),
+        CheckConstraint("month BETWEEN 1 AND 12", name="chk_project_month_plan_1_12"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+
+    project: Mapped["Project"] = relationship("Project", back_populates="month_plans")
 
 
 # ---------------------------------------------------------------------------

@@ -29,6 +29,10 @@ export const deleteSalary = (id, year, month) =>
 // Projects
 export const getProjects = (params) => api.get('/projects', { params }).then(r => r.data)
 export const getProject = (id, params) => api.get(`/projects/${id}`, { params }).then(r => r.data)
+export const getProjectMonthPlan = (id, year) =>
+  api.get(`/projects/${id}/month-plan`, { params: { year } }).then(r => r.data)
+export const putProjectMonthPlan = (id, year, items) =>
+  api.put(`/projects/${id}/month-plan`, { items }, { params: { year } }).then(r => r.data)
 export const createProject = (data) => api.post('/projects', data).then(r => r.data)
 export const updateProject = (id, data) => api.patch(`/projects/${id}`, data).then(r => r.data)
 export const deleteProject = (id) => api.delete(`/projects/${id}`)
@@ -42,6 +46,10 @@ export const setAssignmentRate = ({ assignmentId, year, month, rate }) =>
 // Budget Projects
 export const getBudgetProjects = (params) => api.get('/budget-projects', { params }).then(r => r.data)
 export const getBudgetProject = (id, params) => api.get(`/budget-projects/${id}`, { params }).then(r => r.data)
+export const getBudgetProjectMonthPlan = (id, year) =>
+  api.get(`/budget-projects/${id}/month-plan`, { params: { year } }).then(r => r.data)
+export const putBudgetProjectMonthPlan = (id, year, items) =>
+  api.put(`/budget-projects/${id}/month-plan`, { items }, { params: { year } }).then(r => r.data)
 export const createBudgetProject = (data) => api.post('/budget-projects', data).then(r => r.data)
 export const updateBudgetProject = (id, data) => api.patch(`/budget-projects/${id}`, data).then(r => r.data)
 export const deleteBudgetProject = (id) => api.delete(`/budget-projects/${id}`)
