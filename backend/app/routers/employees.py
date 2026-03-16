@@ -28,6 +28,7 @@ from app.services.employees_service import (
     create_employees_from_rows,
     create_position_assignment_and_salary,
     preview_row,
+    seed_yearly_salaries_for_all_employees,
 )
 
 router = APIRouter(prefix="/employees", tags=["employees"])
@@ -249,6 +250,26 @@ def delete_all_employees(
     db.query(Employee).delete()
     db.commit()
     return {"deleted": count}
+
+
+@router.post("/debug/seed-salaries")
+def debug_seed_salaries_for_all_employees(
+    year: int = Query(default=None, description="Year to seed salaries for; defaults to current year"),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Отладочный endpoint: создаёт недостающие SalaryRecord всем текущим сотрудникам на указанный год.
+
+    Доступен только при DEBUG_MODE=true.
+    """
+    if not settings.DEBUG_MODE:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: debug only")
+
+    if year is None:
+        year = date.today().year
+
+    result = seed_yearly_salaries_for_all_employees(db, year=year)
+    return result
 
 
 @router.delete("/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)

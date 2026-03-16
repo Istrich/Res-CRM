@@ -261,3 +261,74 @@ def create_position_assignment_and_salary(
             is_raise=False,
         )
         db.add(rec)
+
+
+def seed_yearly_salaries_for_all_employees(
+    db: Session,
+    year: int,
+) -> dict:
+    """
+    Create missing SalaryRecord records for all non-position employees for the given year.
+
+    Intended for debug/test data only. Existing records are not modified.
+    """
+    employees = (
+        db.query(Employee)
+        .filter(Employee.is_position.is_(False))
+        .order_by(Employee.created_at, Employee.id)
+        .all()
+    )
+    created_records = 0
+
+    for idx, emp in enumerate(employees):
+        # Simple deterministic base salary depending on employee index
+        base_salary = 80_000 + (idx % 8) * 10_000
+
+        for month in range(1, 13):
+            # Skip if record already exists
+            existing = (
+                db.query(SalaryRecord)
+                .filter(
+                    SalaryRecord.employee_id == emp.id,
+                    SalaryRecord.year == year,
+                    SalaryRecord.month == month,
+                )
+                .first()
+            )
+            if existing:
+                continue
+
+            # KPI: for roughly every 2nd employee
+            kpi_bonus = 0.0
+            if idx % 2 == 0:
+                kpi_bonus = round(base_salary * 0.1, 2)
+
+            # Fixed monthly bonus: for roughly every 3rd employee
+            fixed_bonus = 0.0
+            if idx % 3 == 0:
+                fixed_bonus = 5_000.0
+
+            # One-time bonuses on some months for roughly every 5th employee
+            one_time_bonus = 0.0
+            if idx % 5 == 0 and month in (3, 6, 9, 12):
+                one_time_bonus = 20_000.0
+
+            rec = SalaryRecord(
+                employee_id=emp.id,
+                year=year,
+                month=month,
+                salary=base_salary,
+                kpi_bonus=kpi_bonus,
+                fixed_bonus=fixed_bonus,
+                one_time_bonus=one_time_bonus,
+                is_raise=False,
+            )
+            db.add(rec)
+            created_records += 1
+
+    db.commit()
+    return {
+        "year": year,
+        "employees_processed": len(employees),
+        "salary_records_created": created_records,
+    }
