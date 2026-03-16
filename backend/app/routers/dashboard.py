@@ -89,7 +89,10 @@ def by_department(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """Spend grouped by employee department."""
+    """Spend grouped by employee department.
+    Note: Uses calc_employee_month_cost in loop (not BudgetSnapshot); snapshot is project-scoped.
+    Future: EmployeeMonthSnapshot would allow reading from cache here. See docs/plans.
+    """
     employees = db.query(Employee).all()
     dept_totals: dict[str, float] = {}
 
@@ -112,6 +115,9 @@ def by_specialization(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
+    """Spend grouped by specialization.
+    Note: Uses calc_employee_month_cost in loop (not BudgetSnapshot). See docs/plans for cache option.
+    """
     employees = db.query(Employee).all()
     spec_totals: dict[str, float] = {}
 

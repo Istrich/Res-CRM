@@ -15,7 +15,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 def _project_with_stats(db: Session, proj: Project, year: Optional[int]) -> ProjectWithStats:
-    stats = get_project_budget_summary(db, proj.id, year) if year else {}
+    stats = get_project_budget_summary(db, proj.id, year, project=proj) if year else {}
     employee_count = (
         db.query(EmployeeProject)
         .filter(EmployeeProject.project_id == proj.id)

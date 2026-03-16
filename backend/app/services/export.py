@@ -17,6 +17,7 @@ from app.services.calc import (
     employee_active_in_month,
     get_budget_project_summary,
     get_project_budget_summary,
+    get_salary_for_month,
 )
 
 MONTH_NAMES = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн",
@@ -120,7 +121,7 @@ def export_projects_budget(db: Session, year: int) -> io.BytesIO:
     projects = db.query(Project).all()
 
     for r, proj in enumerate(projects, 2):
-        summary = get_project_budget_summary(db, proj.id, year)
+        summary = get_project_budget_summary(db, proj.id, year, project=proj)
         fill = ALT_FILL if r % 2 == 0 else None
 
         from app.models import BudgetSnapshot
@@ -236,7 +237,6 @@ def export_payroll(db: Session, year: int) -> io.BytesIO:
             monthly_totals.append(cost if cost > 0 else "")
 
             if cost > 0:
-                from app.services.calc import get_salary_for_month
                 rec, is_exact = get_salary_for_month(db, emp.id, year, month)
                 if rec:
                     one_time = float(rec.one_time_bonus) if is_exact else 0

@@ -7,6 +7,7 @@ import { MONTHS, fmt, fmtDate, downloadBlob } from '../utils'
 import Modal from '../components/ui/Modal'
 import Confirm from '../components/ui/Confirm'
 import EmployeeForm from '../components/EmployeeForm'
+import { parseImportTable } from '../utils/parseImportTable'
 
 const EMPTY_FORM = {
   is_position: false, first_name: '', last_name: '', middle_name: '',
@@ -18,54 +19,6 @@ const IMPORT_HEADERS = [
   'Фамилия', 'Имя', 'Отчество', 'Специализация', 'Должность', 'Подразделение',
   'Дата найма', 'Дата увольнения', 'Комментарий',
 ]
-const IMPORT_HEADER_MAP = {
-  'фамилия': 'last_name', 'имя': 'first_name', 'отчество': 'middle_name',
-  'специализация': 'specialization', 'должность': 'title', 'подразделение': 'department',
-  'дата найма': 'hire_date', 'дата увольнения': 'termination_date', 'комментарий': 'comment',
-}
-
-function parseImportDate(s) {
-  if (!s || typeof s !== 'string') return null
-  const t = s.trim()
-  if (!t) return null
-  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t
-  const d = t.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/)
-  if (d) {
-    const [, day, month, year] = d
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
-  }
-  const parsed = new Date(t)
-  return isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10)
-}
-
-function parseImportTable(text) {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
-  if (lines.length < 2) return { rows: [], error: 'Нужна строка заголовков и хотя бы одна строка данных' }
-  const delim = lines[0].includes('\t') ? '\t' : ','
-  const headerLine = lines[0].split(delim).map((c) => c.trim().toLowerCase())
-  const colIndex = {}
-  headerLine.forEach((h, i) => {
-    const key = IMPORT_HEADER_MAP[h]
-    if (key) colIndex[key] = i
-  })
-  const rows = []
-  for (let i = 1; i < lines.length; i++) {
-    const cells = lines[i].split(delim).map((c) => c.trim())
-    const row = {
-      last_name: cells[colIndex.last_name] ?? null,
-      first_name: cells[colIndex.first_name] ?? null,
-      middle_name: cells[colIndex.middle_name] ?? null,
-      specialization: cells[colIndex.specialization] ?? null,
-      title: cells[colIndex.title] ?? null,
-      department: cells[colIndex.department] ?? null,
-      hire_date: parseImportDate(cells[colIndex.hire_date]),
-      termination_date: parseImportDate(cells[colIndex.termination_date]),
-      comment: cells[colIndex.comment] ?? null,
-    }
-    rows.push(row)
-  }
-  return { rows, error: null }
-}
 
 function formatApiError(detail) {
   if (detail == null) return 'Ошибка запроса'
@@ -259,7 +212,7 @@ export default function EmployeesPage() {
       alert(`Удалено записей: ${n}`)
     },
     onError: (e) => {
-      const msg = e.response?.status === 404
+      const msg = e.response?.status === 403 || e.response?.status === 404
         ? 'Удаление всех недоступно (на сервере отключён отладочный режим).'
         : (formatApiError(e.response?.data?.detail) || 'Ошибка')
       alert(msg)

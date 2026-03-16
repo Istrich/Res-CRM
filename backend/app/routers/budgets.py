@@ -53,7 +53,7 @@ def project_budget(
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    summary = get_project_budget_summary(db, project_id, year)
+    summary = get_project_budget_summary(db, project_id, year, project=proj)
 
     # Monthly breakdown from snapshots
     snapshots = (
@@ -98,7 +98,7 @@ def budget_project_budget(
     # Per-project breakdown
     projects_detail = []
     for proj in bp.projects:
-        psummary = get_project_budget_summary(db, proj.id, year)
+        psummary = get_project_budget_summary(db, proj.id, year, project=proj)
         projects_detail.append({
             "project_id": str(proj.id),
             "project_name": proj.name,
@@ -127,7 +127,7 @@ def budget_overview(
 
     projects_out = []
     for proj in projects:
-        summary = get_project_budget_summary(db, proj.id, year)
+        summary = get_project_budget_summary(db, proj.id, year, project=proj)
         projects_out.append({
             "project_id": str(proj.id),
             "project_name": proj.name,

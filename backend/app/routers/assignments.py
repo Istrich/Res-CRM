@@ -9,31 +9,9 @@ from app.dependencies import get_current_user
 from app.models import AssignmentMonthRate, Employee, EmployeeProject, Project, User
 from app.schemas.assignment import AssignmentCreate, AssignmentMonthRateSet, AssignmentOut, AssignmentUpdate
 from app.services.calc import get_employee_month_total_rate
+from app.services.employees_service import check_assignment_period_within_employment
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
-
-
-def _assignment_period_within_employment(emp: Employee, valid_from: date, valid_to: date | None) -> None:
-    """
-    Raise HTTPException if assignment period goes beyond employee employment period.
-    Employment period: hire_date (optional) .. termination_date (optional).
-    """
-    if emp.hire_date is not None and valid_from < emp.hire_date:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Период работы на проекте не может начинаться раньше даты найма ({emp.hire_date.isoformat()})",
-        )
-    if emp.termination_date is not None:
-        if valid_to is None:
-            raise HTTPException(
-                status_code=400,
-                detail="При наличии даты увольнения укажите дату окончания работы на проекте (не позже даты увольнения)",
-            )
-        if valid_to > emp.termination_date:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Период работы на проекте не может заканчиваться позже даты увольнения ({emp.termination_date.isoformat()})",
-            )
 
 
 def _build_out(asgn: EmployeeProject) -> AssignmentOut:
@@ -64,7 +42,7 @@ def create_assignment(
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    _assignment_period_within_employment(emp, body.valid_from, body.valid_to)
+    check_assignment_period_within_employment(emp, body.valid_from, body.valid_to)
 
     asgn = EmployeeProject(**body.model_dump())
     db.add(asgn)
@@ -108,7 +86,7 @@ def update_assignment(
     valid_to = updates.get("valid_to", asgn.valid_to)
     emp = db.query(Employee).filter(Employee.id == asgn.employee_id).first()
     if emp:
-        _assignment_period_within_employment(emp, valid_from, valid_to)
+        check_assignment_period_within_employment(emp, valid_from, valid_to)
 
     for field, value in updates.items():
         setattr(asgn, field, value)

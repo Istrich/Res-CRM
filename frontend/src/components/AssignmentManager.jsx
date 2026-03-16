@@ -2,9 +2,13 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getProjects, createAssignment, deleteAssignment } from '../api'
 import { fmtDate, MONTHS } from '../utils'
+import Confirm from './ui/Confirm'
 
-/** For a given year, returns total rate per month (1..12) for assignments that are active in that month. */
-function getMonthlyTotalRates(assignments, year) {
+/**
+ * Fallback: total rate per month (1..12) from assignments when backend monthly totals are not provided.
+ * Prefer passing assignmentsMonthlyTotalRates from API (getEmployee with year) for single source of truth.
+ */
+function getMonthlyTotalRatesFallback(assignments, year) {
   const totals = Array(12).fill(0)
   const y = year || new Date().getFullYear()
   for (const a of assignments) {
@@ -22,11 +26,12 @@ function getMonthlyTotalRates(assignments, year) {
   return totals
 }
 
-export default function AssignmentManager({ employeeId, assignments = [], onRefresh, year }) {
+export default function AssignmentManager({ employeeId, assignments = [], assignmentsMonthlyTotalRates, onRefresh, year }) {
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState({ project_id: '', rate: '1.0', valid_from: '', valid_to: '' })
   const [err, setErr] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   const refYear = year ?? new Date().getFullYear()
 
@@ -52,6 +57,7 @@ export default function AssignmentManager({ employeeId, assignments = [], onRefr
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['employee', employeeId] })
       onRefresh?.()
+      setDeleteTarget(null)
     },
   })
 
@@ -69,8 +75,10 @@ export default function AssignmentManager({ employeeId, assignments = [], onRefr
     })
   }
 
-  // Per-month rate warning: only warn for months where sum of rates != 1 (assignments can be in different periods)
-  const monthlyRates = getMonthlyTotalRates(assignments, refYear)
+  // Prefer backend-calculated totals (single source of truth); fallback to local calc when not passed
+  const monthlyRates = Array.isArray(assignmentsMonthlyTotalRates) && assignmentsMonthlyTotalRates.length === 12
+    ? assignmentsMonthlyTotalRates
+    : getMonthlyTotalRatesFallback(assignments, refYear)
   const monthsOff = monthlyRates
     .map((r, i) => (Math.abs(r - 1.0) > 0.001 ? MONTHS[i] : null))
     .filter(Boolean)
@@ -108,7 +116,7 @@ export default function AssignmentManager({ employeeId, assignments = [], onRefr
                   <button
                     type="button"
                     className="btn btn-danger btn-sm"
-                    onClick={() => confirm('Убрать сотрудника из проекта?') && deleteMut.mutate(a.id)}
+                    onClick={() => setDeleteTarget(a)}
                   >
                     Убрать
                   </button>
@@ -158,6 +166,14 @@ export default function AssignmentManager({ employeeId, assignments = [], onRefr
         <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAdding(true)}>
           + Добавить проект
         </button>
+      )}
+      {deleteTarget && (
+        <Confirm
+          message={`Убрать "${deleteTarget.project_name}" из проектов сотрудника?`}
+          onConfirm={() => deleteMut.mutate(deleteTarget.id)}
+          onCancel={() => setDeleteTarget(null)}
+          loading={deleteMut.isPending}
+        />
       )}
     </div>
   )

@@ -96,12 +96,19 @@ def authed_client(client, auth_headers) -> TestClient:
 
 
 # ---------------------------------------------------------------------------
+# Test constants (use in time-sensitive tests to avoid drift)
+# ---------------------------------------------------------------------------
+
+TEST_YEAR = 2024
+
+
+# ---------------------------------------------------------------------------
 # Model factories
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
 def make_budget_project(db):
-    def _make(name="Test BP", year=2024, total_budget=1_000_000.0):
+    def _make(name="Test BP", year=TEST_YEAR, total_budget=1_000_000.0):
         bp = BudgetProject(name=name, year=year, total_budget=total_budget)
         db.add(bp)
         db.commit()
@@ -163,7 +170,7 @@ def make_assignment(db):
 
 @pytest.fixture
 def make_salary(db):
-    def _make(employee, year=2024, month=1, salary=100_000, kpi=10_000, fixed=5_000, one_time=0, is_raise=False):
+    def _make(employee, year=TEST_YEAR, month=1, salary=100_000, kpi=10_000, fixed=5_000, one_time=0, is_raise=False):
         rec = SalaryRecord(
             employee_id=employee.id,
             year=year, month=month,
@@ -192,14 +199,14 @@ def full_setup(db, make_budget_project, make_project, make_employee, make_assign
       - Assignment: employee → project, rate=1.0
       - Salary records for all 12 months of 2024
     """
-    bp = make_budget_project(name="Бюджет 2024", year=2024, total_budget=1_500_000)
+    bp = make_budget_project(name="Бюджет 2024", year=TEST_YEAR, total_budget=1_500_000)
     proj = make_project(name="Основной проект", budget_project=bp)
     emp = make_employee(first_name="Алексей", last_name="Смирнов")
     asgn = make_assignment(emp, proj, rate=1.0)
 
     salaries = []
     for m in range(1, 13):
-        s = make_salary(emp, year=2024, month=m, salary=100_000, kpi=10_000, fixed=5_000)
+        s = make_salary(emp, year=TEST_YEAR, month=m, salary=100_000, kpi=10_000, fixed=5_000)
         salaries.append(s)
 
     return {

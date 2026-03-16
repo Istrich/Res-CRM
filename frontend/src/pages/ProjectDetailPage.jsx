@@ -71,7 +71,7 @@ export default function ProjectDetailPage() {
   })
 
   const setRateMut = useMutation({
-    mutationFn: ({ assignmentId, month, rate }) => setAssignmentRate(assignmentId, year, month, rate),
+    mutationFn: ({ assignmentId, month, rate }) => setAssignmentRate({ assignmentId, year, month, rate }),
     onSuccess: (data, { displayName, month: monthNum }) => {
       qc.invalidateQueries({ queryKey: ['project-employees', id, year] })
       qc.invalidateQueries({ queryKey: ['project-budget', id, year] })

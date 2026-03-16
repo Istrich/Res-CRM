@@ -14,13 +14,14 @@ from datetime import date
 import pytest
 from freezegun import freeze_time
 
-from app.models import Employee, SalaryRecord
+from app.models import AssignmentMonthRate, Employee, SalaryRecord
 from app.services.calc import (
     _month_end,
     _month_start,
     calc_employee_month_cost,
     calc_project_month_cost,
     employee_active_in_month,
+    get_employee_month_total_rate,
     get_project_budget_summary,
     get_salary_for_month,
     recalculate_year,
@@ -276,7 +277,33 @@ class TestCalcProjectMonthCost:
 
         assert cost_a == 140_000.0
         assert cost_b == 60_000.0
-        assert cost_a + cost_b == 200_000.0
+
+    @freeze_time("2024-06-15")
+    def test_monthly_rate_override_used_in_project_cost(self, db, full_setup):
+        """AssignmentMonthRate override for a month is used in calc_project_month_cost."""
+        asgn = full_setup["assignment"]
+        proj = full_setup["project"]
+        # Base: rate=1.0, cost 115k → 115k. Override March to 0.5 → 57.5k
+        db.add(AssignmentMonthRate(assignment_id=asgn.id, year=2024, month=3, rate=0.5))
+        db.commit()
+
+        cost_jan = calc_project_month_cost(db, proj.id, 2024, 1)
+        cost_mar = calc_project_month_cost(db, proj.id, 2024, 3)
+        assert cost_jan == 115_000.0
+        assert cost_mar == 57_500.0
+
+    @freeze_time("2024-06-15")
+    def test_monthly_rate_override_used_in_total_rate(self, db, full_setup):
+        """get_employee_month_total_rate uses AssignmentMonthRate override when present."""
+        emp = full_setup["employee"]
+        asgn = full_setup["assignment"]
+        db.add(AssignmentMonthRate(assignment_id=asgn.id, year=2024, month=2, rate=0.25))
+        db.commit()
+
+        total_jan = get_employee_month_total_rate(db, emp.id, 2024, 1)
+        total_feb = get_employee_month_total_rate(db, emp.id, 2024, 2)
+        assert total_jan == 1.0
+        assert total_feb == 0.25
 
     def test_multiple_employees(self, db, make_budget_project, make_project,
                                 make_employee, make_assignment, make_salary):
@@ -437,12 +464,17 @@ class TestRecalculateYear:
 
 class TestGetProjectBudgetSummary:
     @freeze_time("2024-06-15")
-    def test_status_ok(self, db, full_setup):
-        """Total forecast (115k × 12 = 1.38M) < budget (1.5M) → ok."""
-        proj = full_setup["project"]
+    def test_status_ok(self, db, make_budget_project, make_project, make_employee,
+                      make_assignment, make_salary):
+        """Forecast 1.38M < budget 2M (forecast < 90% of budget) → status ok."""
+        bp = make_budget_project(total_budget=2_000_000)
+        proj = make_project(budget_project=bp)
+        emp = make_employee()
+        make_assignment(emp, proj, rate=1.0)
+        for m in range(1, 13):
+            make_salary(emp, year=2024, month=m, salary=100_000, kpi=10_000, fixed=5_000, one_time=0)
         recalculate_year(db, 2024)
-
-        summary = get_project_budget_summary(db, proj.id, 2024)
+        summary = get_project_budget_summary(db, proj.id, 2024, project=proj)
         assert summary["status"] == "ok"
         assert summary["forecast"] == pytest.approx(1_380_000.0)
 

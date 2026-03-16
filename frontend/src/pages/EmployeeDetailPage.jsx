@@ -18,6 +18,8 @@ const POSITION_STATUS_LABELS = {
 }
 import Confirm from '../components/ui/Confirm'
 import EmployeeForm from '../components/EmployeeForm'
+import SalaryModal from '../components/SalaryModal'
+import AddAssignmentModal from '../components/AddAssignmentModal'
 import { MemberRateCell, EditableDateCell } from '../components/MembersTable'
 
 export default function EmployeeDetailPage() {
@@ -99,7 +101,7 @@ export default function EmployeeDetailPage() {
   })
 
   const setRateMut = useMutation({
-    mutationFn: ({ assignmentId, month, rate }) => setAssignmentRate(assignmentId, year, month, rate),
+    mutationFn: ({ assignmentId, month, rate }) => setAssignmentRate({ assignmentId, year, month, rate }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['employee', id, year] }),
   })
 
@@ -527,132 +529,5 @@ export default function EmployeeDetailPage() {
         />
       )}
     </div>
-  )
-}
-
-const SALARY_FIELDS = [
-  { key: 'salary', label: 'Оклад (gross)' },
-  { key: 'kpi_bonus', label: 'KPI премия' },
-  { key: 'fixed_bonus', label: 'Фикс. надбавка' },
-  { key: 'one_time_bonus', label: 'Разовая премия' },
-]
-
-function SalaryModal({ month, year, form, setForm, extend, setExtend, onSave, onClose, loading }) {
-  const f = (field) => (e) => setForm({ ...form, [field]: Number(e.target.value) })
-  const total = (form.salary || 0) + (form.kpi_bonus || 0) + (form.fixed_bonus || 0) + (form.one_time_bonus || 0)
-  const restMonthsCount = 13 - month
-  const showExtend = restMonthsCount > 1
-
-  return (
-    <Modal
-      title={`Вознаграждение — ${MONTHS[month - 1]} ${year}`}
-      onClose={onClose}
-      footer={
-        <>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>Отмена</button>
-          <button type="button" className="btn btn-primary" onClick={onSave} disabled={loading}>
-            {loading ? <span className="spinner" /> : 'Сохранить'}
-          </button>
-        </>
-      }
-    >
-      <div className="grid-2">
-        {SALARY_FIELDS.map(({ key, label }) => (
-          <div key={key} className="form-group">
-            <label className="label">{label}</label>
-            <input className="input" type="number" value={form[key]} onChange={f(key)} />
-            {showExtend && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text-2)' }}>
-                <input
-                  type="checkbox"
-                  checked={extend[key]}
-                  onChange={(e) => setExtend({ ...extend, [key]: e.target.checked })}
-                />
-                Продлить до декабря
-              </label>
-            )}
-          </div>
-        ))}
-      </div>
-      <div className="form-group" style={{ marginTop: 12 }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={form.is_raise ?? false}
-            onChange={(e) => setForm({ ...form, is_raise: e.target.checked })}
-          />
-          <span>Повышение</span>
-        </label>
-        <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>Месяц будет отмечен зелёным в таблице как месяц, с которого повышение.</div>
-      </div>
-      {showExtend && (
-        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-3)' }}>
-          Галочка «Продлить до декабря» — это значение будет подставлено с {MONTHS[month - 1]} по декабрь ({restMonthsCount} мес.), остальные компоненты в тех месяцах не меняются.
-        </div>
-      )}
-      <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 15, marginTop: 12 }}>
-        Итого: {fmt(total)} ₽
-      </div>
-    </Modal>
-  )
-}
-
-function AddAssignmentModal({ employeeId, onClose, onDone }) {
-  const [projectId, setProjectId] = useState('')
-  const [rate, setRate] = useState(1)
-  const [validFrom, setValidFrom] = useState(new Date().toISOString().slice(0, 10))
-  const [validTo, setValidTo] = useState('')
-  const [error, setError] = useState('')
-
-  const { data: projects = [] } = useQuery({ queryKey: ['projects-list'], queryFn: () => getProjects() })
-
-  const mut = useMutation({
-    mutationFn: createAssignment,
-    onSuccess: onDone,
-    onError: (e) => setError(e.response?.data?.detail || 'Ошибка'),
-  })
-
-  return (
-    <Modal
-      title="Добавить в проект"
-      onClose={onClose}
-      footer={
-        <>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>Отмена</button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!projectId || mut.isPending}
-            onClick={() => mut.mutate({ employee_id: employeeId, project_id: projectId, rate: Number(rate), valid_from: validFrom, valid_to: validTo || null })}
-          >
-            {mut.isPending ? <span className="spinner" /> : 'Сохранить'}
-          </button>
-        </>
-      }
-    >
-      {error && <div className="alert alert-error">{error}</div>}
-      <div className="form-group">
-        <label className="label">Проект *</label>
-        <select className="select" style={{ width: '100%' }} value={projectId} onChange={e => setProjectId(e.target.value)}>
-          <option value="">— выберите проект —</option>
-          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-      </div>
-        <div className="grid-3">
-        <div className="form-group">
-          <label className="label">Ставка</label>
-          <input className="input" type="number" step="0.1" min="0.1" value={rate} onChange={e => setRate(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label className="label">С</label>
-          <input className="input" type="date" value={validFrom} onChange={e => setValidFrom(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label className="label">По</label>
-          <input className="input" type="date" value={validTo} onChange={e => setValidTo(e.target.value)} />
-          <div className="text-muted text-small" style={{ marginTop: 4 }}>Необязательно; если пусто — по сей день</div>
-        </div>
-      </div>
-    </Modal>
   )
 }

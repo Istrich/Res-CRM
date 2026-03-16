@@ -27,7 +27,9 @@ export default function EmployeeForm({ initial = {}, onSubmit, loading, submitLa
     enabled: form.is_position,
   })
 
-  useEffect(() => { setForm({ ...EMPTY, ...initial }) }, [JSON.stringify(initial)])
+  useEffect(() => {
+    setForm({ ...EMPTY, ...initial })
+  }, [initial])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 

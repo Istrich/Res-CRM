@@ -35,7 +35,8 @@ export const deleteProject = (id) => api.delete(`/projects/${id}`)
 export const getProjectEmployees = (id, params) => api.get(`/projects/${id}/employees`, { params }).then(r => r.data)
 export const removeEmployeeFromProject = (projectId, assignmentId) =>
   api.delete(`/projects/${projectId}/employees/${assignmentId}`)
-export const setAssignmentRate = (assignmentId, year, month, rate) =>
+/** Payload: { assignmentId, year, month, rate } — year must be passed explicitly. */
+export const setAssignmentRate = ({ assignmentId, year, month, rate }) =>
   api.put(`/assignments/${assignmentId}/rates/${year}/${month}`, { rate }).then(r => r.data)
 
 // Budget Projects

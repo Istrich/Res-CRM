@@ -101,6 +101,20 @@ class EmployeeCreate(BaseModel):
     project_id: Optional[uuid.UUID] = None
     rate: Optional[float] = None
 
+    @field_validator("planned_salary")
+    @classmethod
+    def planned_salary_non_negative(cls, v):
+        if v is not None and v < 0:
+            raise ValueError("planned_salary must be >= 0")
+        return v
+
+    @field_validator("rate")
+    @classmethod
+    def rate_positive(cls, v):
+        if v is not None and v <= 0:
+            raise ValueError("rate must be > 0")
+        return v
+
     @model_validator(mode="after")
     def check_dates(self):
         if self.hire_date and self.termination_date:
@@ -125,6 +139,13 @@ class EmployeeUpdate(BaseModel):
     position_status: Optional[str] = None
     planned_exit_date: Optional[date] = None
     planned_salary: Optional[float] = None
+
+    @field_validator("planned_salary")
+    @classmethod
+    def planned_salary_non_negative(cls, v):
+        if v is not None and v < 0:
+            raise ValueError("planned_salary must be >= 0")
+        return v
 
     @model_validator(mode="after")
     def check_dates(self):

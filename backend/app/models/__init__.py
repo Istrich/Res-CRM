@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean, CheckConstraint, Date, DateTime, ForeignKey,
@@ -211,7 +212,8 @@ class SalaryRecord(Base):
 
     @property
     def total(self) -> float:
-        return float(self.salary) + float(self.kpi_bonus) + float(self.fixed_bonus) + float(self.one_time_bonus)
+        s = Decimal(str(self.salary)) + Decimal(str(self.kpi_bonus)) + Decimal(str(self.fixed_bonus)) + Decimal(str(self.one_time_bonus))
+        return float(s)
 
 
 # ---------------------------------------------------------------------------

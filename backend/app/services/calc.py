@@ -11,7 +11,7 @@ Rules:
 - forecast = actual (past months) + planned (future months based on latest salary)
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -26,7 +26,7 @@ def _month_start(year: int, month: int) -> date:
 def _month_end(year: int, month: int) -> date:
     if month == 12:
         return date(year, 12, 31)
-    return date(year, month + 1, 1).__class__(year, month + 1, 1) - __import__("datetime").timedelta(days=1)
+    return date(year, month + 1, 1) - timedelta(days=1)
 
 
 def employee_active_in_month(emp: Employee, year: int, month: int) -> bool:
@@ -190,28 +190,30 @@ def recalculate_year(db: Session, year: int) -> dict:
     """
     Recalculate all budget snapshots for a given year.
     Returns summary dict with counts.
-    Uses no_autoflush in the loop to avoid partial flush on large volumes.
+    Loads existing snapshots in one query, then updates or creates in loop.
     """
     today = date.today()
     projects = db.query(Project).all()
     updated = 0
 
+    # Load all snapshots for year in one query
+    existing_snapshots = (
+        db.query(BudgetSnapshot)
+        .filter(BudgetSnapshot.year == year)
+        .all()
+    )
+    snapshot_by_key: dict[tuple, BudgetSnapshot] = {
+        (s.project_id, s.month): s for s in existing_snapshots
+    }
+
     with db.no_autoflush:
         for project in projects:
             for month in range(1, 13):
                 amount = calc_project_month_cost(db, project.id, year, month)
-                # Month is "fact" only when fully in the past; current and future months = forecast
                 is_forecast = (year > today.year) or (year == today.year and month >= today.month)
 
-                existing = (
-                    db.query(BudgetSnapshot)
-                    .filter(
-                        BudgetSnapshot.project_id == project.id,
-                        BudgetSnapshot.year == year,
-                        BudgetSnapshot.month == month,
-                    )
-                    .first()
-                )
+                key = (project.id, month)
+                existing = snapshot_by_key.get(key)
 
                 if existing:
                     existing.amount = amount
@@ -226,6 +228,7 @@ def recalculate_year(db: Session, year: int) -> dict:
                         is_forecast=is_forecast,
                     )
                     db.add(snapshot)
+                    snapshot_by_key[key] = snapshot
 
                 updated += 1
 
@@ -234,8 +237,15 @@ def recalculate_year(db: Session, year: int) -> dict:
     return {"year": year, "projects_updated": len(projects), "snapshots_updated": updated}
 
 
-def get_project_budget_summary(db: Session, project_id, year: int) -> dict:
-    """Return spent, forecast, remaining, status for a project."""
+def get_project_budget_summary(
+    db: Session,
+    project_id,
+    year: int,
+    project: Project | None = None,
+) -> dict:
+    """Return spent, forecast, remaining, status for a project.
+    If project is passed, avoids extra SELECT for budget_project.
+    """
     snapshots = (
         db.query(BudgetSnapshot)
         .filter(BudgetSnapshot.project_id == project_id, BudgetSnapshot.year == year)
@@ -246,8 +256,8 @@ def get_project_budget_summary(db: Session, project_id, year: int) -> dict:
     forecast_months = sum(float(s.amount) for s in snapshots if s.is_forecast)
     total_forecast = spent + forecast_months
 
-    # Get budget from budget_project
-    project = db.get(Project, project_id)
+    if project is None:
+        project = db.get(Project, project_id)
     budget = None
     if project and project.budget_project:
         budget = float(project.budget_project.total_budget) if project.budget_project.total_budget else None
