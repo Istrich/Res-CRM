@@ -69,8 +69,12 @@ export const getBudgetOverview = (year) => api.get('/budgets/overview', { params
 // Dashboard
 export const getDashboardSummary = (year) => api.get('/dashboard/summary', { params: { year } }).then(r => r.data)
 export const getDashboardByProject = (year) => api.get('/dashboard/by-project', { params: { year } }).then(r => r.data)
+export const getDashboardByProjectMonthly = (year) => api.get('/dashboard/by-project-monthly', { params: { year } }).then(r => r.data)
+export const getDashboardByBudgetProjectMonthly = (year) => api.get('/dashboard/by-budget-project-monthly', { params: { year } }).then(r => r.data)
 export const getDashboardByDepartment = (year) => api.get('/dashboard/by-department', { params: { year } }).then(r => r.data)
+export const getDashboardByDepartmentMonthly = (year) => api.get('/dashboard/by-department-monthly', { params: { year } }).then(r => r.data)
 export const getDashboardBySpec = (year) => api.get('/dashboard/by-specialization', { params: { year } }).then(r => r.data)
+export const getDashboardBySpecMonthly = (year) => api.get('/dashboard/by-specialization-monthly', { params: { year } }).then(r => r.data)
 export const getMovements = (year) => api.get('/dashboard/movements', { params: { year } }).then(r => r.data)
 export const getAvailableYears = () => api.get('/dashboard/available-years').then(r => r.data)
 
