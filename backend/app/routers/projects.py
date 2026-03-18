@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import AssignmentMonthRate, Employee, EmployeeProject, Project, User
+from app.utils import escape_like
 from app.schemas.employee import AssignmentOut, EmployeeListItem
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate, ProjectWithStats
 from app.services.budget_plan import (
@@ -53,7 +54,7 @@ def list_projects(
     if budget_project_id:
         q = q.filter(Project.budget_project_id == budget_project_id)
     if search:
-        q = q.filter(Project.name.ilike(f"%{search}%"))
+        q = q.filter(Project.name.ilike(f"%{escape_like(search)}%", escape="\\"))
     projects = q.order_by(Project.name).all()
     return [_project_with_stats(db, p, year) for p in projects]
 

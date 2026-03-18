@@ -42,6 +42,15 @@ class SalaryRecordUpsert(BaseModel):
     is_raise: bool = False
 
 
+class SalaryBatchItem(SalaryRecordUpsert):
+    month: int
+
+
+class SalaryBatchUpsert(BaseModel):
+    year: int
+    records: list[SalaryBatchItem]
+
+
 class ProjectBrief(BaseModel):
     id: uuid.UUID
     name: str

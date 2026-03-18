@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getEmployees, createEmployee, deleteEmployee, deleteAllEmployees, exportEmployees, importEmployees, importEmployeesExcel } from '../api'
 import { useYearStore } from '../store/year'
 import { MONTHS, fmt, fmtDate, downloadBlob } from '../utils'
+import { useDebounce } from '../utils/hooks'
 import Modal from '../components/ui/Modal'
 import Confirm from '../components/ui/Confirm'
 import EmployeeForm from '../components/EmployeeForm'
@@ -156,6 +157,7 @@ export default function EmployeesPage() {
   const navigate = useNavigate()
 
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
   const [filterDept, setFilterDept] = useState('')
   const [filterSpec, setFilterSpec] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -170,11 +172,11 @@ export default function EmployeesPage() {
   const [formError, setFormError] = useState('')
 
   const { data: employees = [], isLoading } = useQuery({
-    queryKey: ['employees', year, month, { search, department: filterDept, specialization: filterSpec }],
+    queryKey: ['employees', year, month, { search: debouncedSearch, department: filterDept, specialization: filterSpec }],
     queryFn: () => getEmployees({
       year,
       month,
-      search: search || undefined,
+      search: debouncedSearch || undefined,
       department: filterDept || undefined,
       specialization: filterSpec || undefined,
     }),
@@ -370,6 +372,7 @@ export default function EmployeesPage() {
         >
           {formError && <div className="alert alert-error">{formError}</div>}
           <EmployeeForm
+            key="new"
             initial={EMPTY_FORM}
             onSubmit={(payload) => createMut.mutate(payload)}
             loading={createMut.isPending}

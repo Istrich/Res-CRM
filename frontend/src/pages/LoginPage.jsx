@@ -6,14 +6,14 @@ import { useAuthStore } from '../store/auth'
 
 export default function LoginPage() {
   const navigate = useNavigate()
-  const setToken = useAuthStore((s) => s.setToken)
+  const setAuthenticated = useAuthStore((s) => s.setAuthenticated)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
 
   const mut = useMutation({
     mutationFn: () => login({ username, password }),
-    onSuccess: (data) => {
-      setToken(data.access_token)
+    onSuccess: () => {
+      setAuthenticated(true)
       navigate('/')
     },
   })

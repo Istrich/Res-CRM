@@ -1,14 +1,14 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.dependencies import get_current_user
 from app.models import AssignmentMonthRate, Employee, EmployeeProject, Project, User
 from app.schemas.assignment import AssignmentCreate, AssignmentMonthRateSet, AssignmentOut, AssignmentUpdate
-from app.services.calc import get_employee_month_total_rate
+from app.services.calc import get_employee_month_total_rate, maybe_recalculate_year_background
 from app.services.employees_service import check_assignment_period_within_employment
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
@@ -30,10 +30,10 @@ def _build_out(asgn: EmployeeProject) -> AssignmentOut:
 @router.post("", response_model=AssignmentOut, status_code=status.HTTP_201_CREATED)
 def create_assignment(
     body: AssignmentCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    # Validate employee and project exist
     emp = db.query(Employee).filter(Employee.id == body.employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -49,12 +49,13 @@ def create_assignment(
     db.commit()
     db.refresh(asgn)
 
-    # reload with relationships
     asgn = (
         db.query(EmployeeProject)
         .filter(EmployeeProject.id == asgn.id)
         .first()
     )
+    affected_year = body.valid_from.year
+    background_tasks.add_task(maybe_recalculate_year_background, SessionLocal, affected_year)
     return _build_out(asgn)
 
 
@@ -74,6 +75,7 @@ def get_assignment(
 def update_assignment(
     assignment_id: uuid.UUID,
     body: AssignmentUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -93,6 +95,7 @@ def update_assignment(
 
     db.commit()
     db.refresh(asgn)
+    background_tasks.add_task(maybe_recalculate_year_background, SessionLocal, valid_from.year)
     return _build_out(asgn)
 
 
@@ -102,6 +105,7 @@ def set_assignment_month_rate(
     year: int,
     month: int,
     body: AssignmentMonthRateSet,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -128,6 +132,7 @@ def set_assignment_month_rate(
     db.commit()
     db.refresh(rec)
     total_rate = get_employee_month_total_rate(db, asgn.employee_id, year, month)
+    background_tasks.add_task(maybe_recalculate_year_background, SessionLocal, year)
     return {
         "assignment_id": str(assignment_id),
         "year": year,

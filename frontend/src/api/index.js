@@ -2,6 +2,7 @@ import api from './client'
 
 // Auth
 export const login = (data) => api.post('/auth/login', data).then(r => r.data)
+export const logout = () => api.post('/auth/logout').then(r => r.data)
 export const getMe = () => api.get('/auth/me').then(r => r.data)
 
 // Employees
@@ -25,6 +26,9 @@ export const upsertSalary = (id, year, month, data) =>
   api.put(`/employees/${id}/salary/${year}/${month}`, data).then(r => r.data)
 export const deleteSalary = (id, year, month) =>
   api.delete(`/employees/${id}/salary/${year}/${month}`)
+/** Batch upsert: { year, records: [{ month, salary, kpi_bonus, fixed_bonus, one_time_bonus, is_raise }] } */
+export const batchUpsertSalary = (id, data) =>
+  api.put(`/employees/${id}/salary/batch`, data).then(r => r.data)
 
 // Projects
 export const getProjects = (params) => api.get('/projects', { params }).then(r => r.data)

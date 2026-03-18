@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getProjects } from '../api'
 
@@ -17,6 +17,11 @@ const POSITION_STATUS_OPTIONS = [
   { value: 'awaiting_start', label: 'Ожидаем выход' },
 ]
 
+/**
+ * Use `key={emp?.id || 'new'}` on EmployeeForm in the parent to reset state
+ * when the edited record changes — avoids the stale-closure / infinite-loop
+ * problem of useEffect([initial]) when initial is a new object reference.
+ */
 export default function EmployeeForm({ initial = {}, onSubmit, loading, submitLabel = 'Сохранить' }) {
   const [form, setForm] = useState({ ...EMPTY, ...initial })
   const [error, setError] = useState('')
@@ -26,10 +31,6 @@ export default function EmployeeForm({ initial = {}, onSubmit, loading, submitLa
     queryFn: () => getProjects(),
     enabled: form.is_position,
   })
-
-  useEffect(() => {
-    setForm({ ...EMPTY, ...initial })
-  }, [initial])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 

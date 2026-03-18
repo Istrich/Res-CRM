@@ -1,4 +1,6 @@
-from fastapi import Depends, HTTPException, status
+from typing import Optional
+
+from fastapi import Cookie, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -6,14 +8,30 @@ from app.database import get_db
 from app.models import User
 from app.services.auth import decode_token
 
-bearer_scheme = HTTPBearer()
+# Optional bearer — won't raise 403 when header is absent (cookie path handles it)
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    access_token: Optional[str] = Cookie(default=None),
     db: Session = Depends(get_db),
 ) -> User:
-    token = credentials.credentials
+    """Authenticate via HttpOnly cookie first, then fall back to Bearer header.
+
+    Cookie path: browser clients (SPA).
+    Bearer path: API clients / external integrations.
+    """
+    token: Optional[str] = None
+
+    if access_token:
+        token = access_token
+    elif credentials:
+        token = credentials.credentials
+
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
     payload = decode_token(token)
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")

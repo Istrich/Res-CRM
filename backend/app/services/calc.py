@@ -11,8 +11,18 @@ Rules:
 - forecast = actual (past months) + planned (future months based on latest salary)
 """
 
+import logging
+import time
+import threading
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+
+logger = logging.getLogger(__name__)
+
+# Debounce: don't recalculate the same year more often than once per 5 seconds
+_RECALC_DEBOUNCE_SECONDS = 5
+_last_recalc_time: dict[int, float] = {}
+_debounce_lock = threading.Lock()
 
 from sqlalchemy.orm import Session
 
@@ -159,6 +169,79 @@ def calc_employee_month_cost(db: Session, emp: Employee, year: int, month: int) 
     return float(rec.salary) + float(rec.kpi_bonus) + float(rec.fixed_bonus) + one_time
 
 
+def batch_employee_month_costs(
+    db: Session, employee_ids: list, year: int
+) -> dict[tuple, float]:
+    """Load all SalaryRecords for a list of employees in one year in one query.
+
+    Returns dict[(employee_id, month)] -> cost.
+    Uses the same fallback chain as calc_employee_month_cost but in-memory,
+    eliminating N+1 queries for dashboard group-by endpoints.
+    """
+    if not employee_ids:
+        return {}
+
+    # Fetch all salary records for the given employees + year + the latest prior year
+    all_records = (
+        db.query(SalaryRecord)
+        .filter(
+            SalaryRecord.employee_id.in_(employee_ids),
+            SalaryRecord.year <= year,
+        )
+        .order_by(SalaryRecord.employee_id, SalaryRecord.year, SalaryRecord.month)
+        .all()
+    )
+
+    # Build per-employee index: year -> month -> record
+    from collections import defaultdict
+    emp_records: dict = defaultdict(lambda: defaultdict(dict))
+    for rec in all_records:
+        emp_records[rec.employee_id][rec.year][rec.month] = rec
+
+    # Fetch employees for active-in-month checks
+    employees = {e.id: e for e in db.query(Employee).filter(Employee.id.in_(employee_ids)).all()}
+
+    result: dict[tuple, float] = {}
+    for emp_id in employee_ids:
+        emp = employees.get(emp_id)
+        if emp is None:
+            continue
+        for month in range(1, 13):
+            if not employee_active_in_month(emp, year, month):
+                result[(emp_id, month)] = 0.0
+                continue
+
+            year_map = emp_records.get(emp_id, {})
+            # Exact month
+            rec = year_map.get(year, {}).get(month)
+            is_exact = rec is not None
+
+            if not is_exact:
+                # Fallback: same year, earlier month
+                same_year = year_map.get(year, {})
+                prev_months = [m for m in same_year if m < month]
+                if prev_months:
+                    rec = same_year[max(prev_months)]
+                else:
+                    # Fallback: most recent prior year
+                    prior_years = sorted([y for y in year_map if y < year], reverse=True)
+                    for py in prior_years:
+                        py_months = year_map.get(py, {})
+                        if py_months:
+                            rec = py_months[max(py_months.keys())]
+                            break
+
+            if rec is None:
+                result[(emp_id, month)] = 0.0
+                continue
+
+            one_time = float(rec.one_time_bonus) if is_exact else 0.0
+            cost = float(rec.salary) + float(rec.kpi_bonus) + float(rec.fixed_bonus) + one_time
+            result[(emp_id, month)] = cost
+
+    return result
+
+
 def calc_project_month_cost(db: Session, project_id, year: int, month: int) -> float:
     """Sum of all employee costs attributed to a project in given month."""
     ms = _month_start(year, month)
@@ -244,6 +327,30 @@ def recalculate_year(db: Session, year: int) -> dict:
     db.flush()
     db.commit()
     return {"year": year, "projects_updated": len(projects), "snapshots_updated": updated}
+
+
+def maybe_recalculate_year_background(db_factory, year: int) -> None:
+    """Trigger recalculate_year if the debounce window has passed.
+
+    Intended for use with FastAPI BackgroundTasks. Acquires a per-year lock so
+    concurrent HTTP requests don't produce duplicate work. db_factory should be
+    a callable that returns a new Session (e.g. SessionLocal).
+    """
+    now = time.monotonic()
+    with _debounce_lock:
+        last = _last_recalc_time.get(year, 0)
+        if now - last < _RECALC_DEBOUNCE_SECONDS:
+            return
+        _last_recalc_time[year] = now
+
+    db = db_factory()
+    try:
+        recalculate_year(db, year)
+        logger.info("Background recalculate completed for year %s", year)
+    except Exception as exc:
+        logger.warning("Background recalculate failed for year %s: %s", year, exc)
+    finally:
+        db.close()
 
 
 def get_project_budget_summary(

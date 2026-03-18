@@ -548,3 +548,83 @@ class TestGetProjectBudgetSummary:
         summary = get_project_budget_summary(db, proj.id, 2024)
         assert summary["status"] == "ok"
         assert summary["remaining"] is None
+
+
+# ---------------------------------------------------------------------------
+# 5.1 Concurrent recalculate / idempotency
+# ---------------------------------------------------------------------------
+
+class TestRecalculateIdempotencyAndConcurrency:
+    def test_recalculate_twice_is_idempotent(self, db, full_setup):
+        """Calling recalculate_year twice produces the same snapshot amounts."""
+        proj = full_setup["project"]
+        year = 2024
+
+        result1 = recalculate_year(db, year)
+        snapshots1 = {s.month: float(s.amount) for s in db.query(__import__('app.models', fromlist=['BudgetSnapshot']).BudgetSnapshot).filter_by(year=year).all()}
+
+        result2 = recalculate_year(db, year)
+        snapshots2 = {s.month: float(s.amount) for s in db.query(__import__('app.models', fromlist=['BudgetSnapshot']).BudgetSnapshot).filter_by(year=year).all()}
+
+        assert snapshots1 == snapshots2, "Recalculate should be idempotent"
+        # No duplicate rows should be created
+        from sqlalchemy import func
+        from app.models import BudgetSnapshot
+        count = db.query(func.count(BudgetSnapshot.id)).filter_by(project_id=proj.id, year=year).scalar()
+        assert count == 12, f"Expected 12 snapshots, got {count}"
+
+    def test_recalculate_concurrent_no_duplicate_snapshots(self, engine, full_setup):
+        """Simulates two near-simultaneous recalculate_year calls via threading.
+        The UniqueConstraint should prevent duplicates; idempotent updates should win.
+        Each thread gets its own Session to avoid SQLite single-thread limitation.
+        """
+        import threading
+        from sqlalchemy.orm import sessionmaker
+        from app.models import BudgetSnapshot
+        from sqlalchemy import func
+
+        proj = full_setup["project"]
+        year = 2024
+        errors = []
+        Session = sessionmaker(bind=engine)
+
+        def run():
+            session = Session()
+            try:
+                recalculate_year(session, year)
+            except Exception as exc:
+                errors.append(exc)
+                session.rollback()
+            finally:
+                session.close()
+
+        t1 = threading.Thread(target=run)
+        t2 = threading.Thread(target=run)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        # One of the threads may fail with IntegrityError (race on INSERT);
+        # that's the expected concurrency protection behavior.
+        # Verify the DB is in a clean state: at most 12 snapshots per project.
+        check_session = Session()
+        try:
+            count = check_session.query(func.count(BudgetSnapshot.id)).filter_by(
+                project_id=proj.id, year=year
+            ).scalar()
+            assert count <= 12, f"Expected at most 12 snapshots, got {count} (no duplicates)"
+        finally:
+            check_session.close()
+
+    def test_batch_employee_month_costs_matches_single(self, db, full_setup):
+        """batch_employee_month_costs should match calc_employee_month_cost for every month."""
+        from app.services.calc import batch_employee_month_costs, calc_employee_month_cost
+        emp = full_setup["employee"]
+        year = 2024
+
+        batch = batch_employee_month_costs(db, [emp.id], year)
+        for month in range(1, 13):
+            single = calc_employee_month_cost(db, emp, year, month)
+            assert batch.get((emp.id, month), 0.0) == pytest.approx(single, abs=0.01), \
+                f"Mismatch at month {month}: batch={batch.get((emp.id, month))}, single={single}"

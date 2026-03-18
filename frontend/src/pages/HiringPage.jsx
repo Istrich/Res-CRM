@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getEmployees } from '../api'
 import { useYearStore } from '../store/year'
 import { fmtDate, fmt } from '../utils'
+import { useDebounce } from '../utils/hooks'
 
 const POSITION_STATUS_LABELS = {
   awaiting_assignment: 'Ожидает взятия в работу',
@@ -15,15 +16,16 @@ export default function HiringPage() {
   const navigate = useNavigate()
   const { year, month } = useYearStore()
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
   const [statusFilter, setStatusFilter] = useState('')
 
   const { data: positions = [], isLoading } = useQuery({
-    queryKey: ['employees', 'positions', year, month, search],
+    queryKey: ['employees', 'positions', year, month, debouncedSearch],
     queryFn: () => getEmployees({
       year,
       month,
       is_position: true,
-      search: search || undefined,
+      search: debouncedSearch || undefined,
     }),
   })
 

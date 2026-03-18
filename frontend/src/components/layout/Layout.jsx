@@ -2,7 +2,8 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth'
 import { useYearStore } from '../../store/year'
 import { useQuery } from '@tanstack/react-query'
-import { getAvailableYears } from '../../api'
+import { getAvailableYears, logout as apiLogout } from '../../api'
+import ErrorBoundary from '../ErrorBoundary'
 
 const NAV = [
   { to: '/dashboard', icon: '📊', label: 'Дашборд' },
@@ -25,7 +26,8 @@ export default function Layout() {
 
   const years = yearsData?.years || [new Date().getFullYear()]
 
-  function handleLogout() {
+  async function handleLogout() {
+    try { await apiLogout() } catch (_) { /* ignore */ }
     logout()
     navigate('/login')
   }
@@ -97,7 +99,9 @@ export default function Layout() {
       {/* Main area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <main style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

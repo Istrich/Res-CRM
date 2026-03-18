@@ -237,3 +237,72 @@ class TestAuthService:
         from app.services.auth import authenticate_user
         result = authenticate_user(db, "admin", "wrong")
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# 5.3 Export cell content validation
+# ---------------------------------------------------------------------------
+
+class TestExportCellContent:
+    def test_export_employees_headers_and_first_row(self, db, full_setup):
+        """export_employees xlsx should have proper headers and data in first row."""
+        from app.services.export import export_employees
+        from openpyxl import load_workbook
+        buf = export_employees(db, 2024)
+        wb = load_workbook(buf)
+        ws = wb.active
+
+        # Row 1 = headers
+        headers = [cell.value for cell in ws[1] if cell.value]
+        assert len(headers) > 0, "No headers in export"
+        # Should contain employee name or department column
+        header_str = " ".join(str(h).lower() for h in headers)
+        assert any(keyword in header_str for keyword in ["фамилия", "имя", "сотрудник", "должность", "подразделение"]), \
+            f"Expected employee column headers, got: {headers}"
+
+        # Row 2 = first data row
+        data_rows = list(ws.iter_rows(min_row=2, values_only=True))
+        non_empty = [r for r in data_rows if any(v is not None for v in r)]
+        assert len(non_empty) > 0, "Expected at least one data row in employees export"
+
+    def test_export_employees_row_count(self, db, full_setup):
+        """Number of data rows matches the number of employees."""
+        from app.services.export import export_employees
+        from app.models import Employee
+        from openpyxl import load_workbook
+        buf = export_employees(db, 2024)
+        wb = load_workbook(buf)
+        ws = wb.active
+
+        data_rows = [r for r in ws.iter_rows(min_row=2, values_only=True) if any(v is not None for v in r)]
+        emp_count = db.query(Employee).count()
+        # Export may include positions too, so at least as many as employees
+        assert len(data_rows) >= emp_count
+
+    def test_export_payroll_first_sheet_has_headers(self, db, full_setup):
+        """Payroll export first sheet should have headers in row 1."""
+        from app.services.export import export_payroll
+        from openpyxl import load_workbook
+        buf = export_payroll(db, 2024)
+        wb = load_workbook(buf)
+        ws = wb.worksheets[0]
+
+        headers = [cell.value for cell in ws[1] if cell.value]
+        assert len(headers) > 0, "No headers in payroll export"
+
+    def test_export_payroll_employee_name_in_data(self, db, full_setup):
+        """Payroll export should contain the employee's name in the data."""
+        from app.services.export import export_payroll
+        from openpyxl import load_workbook
+        buf = export_payroll(db, 2024)
+        wb = load_workbook(buf)
+        ws = wb.worksheets[0]
+
+        all_values = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            all_values.extend([str(v) for v in row if v is not None])
+
+        emp = full_setup["employee"]
+        emp_name_part = emp.last_name or emp.first_name or ""
+        assert any(emp_name_part in v for v in all_values), \
+            f"Employee name '{emp_name_part}' not found in payroll export"

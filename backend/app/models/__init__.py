@@ -6,10 +6,10 @@ from sqlalchemy import (
     Boolean, CheckConstraint, Date, DateTime, ForeignKey,
     Integer, Numeric, String, Text, UniqueConstraint, func,
 )
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.types import GUID
 
 
 # ---------------------------------------------------------------------------
@@ -19,7 +19,7 @@ from app.database import Base
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -32,7 +32,7 @@ class User(Base):
 class BudgetProject(Base):
     __tablename__ = "budget_projects"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     total_budget: Mapped[float | None] = mapped_column(Numeric(15, 2), nullable=True)
@@ -58,9 +58,9 @@ class BudgetProjectMonthPlan(Base):
         CheckConstraint("month BETWEEN 1 AND 12", name="chk_month_plan_1_12"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     budget_project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("budget_projects.id", ondelete="CASCADE"), nullable=False
+        GUID(), ForeignKey("budget_projects.id", ondelete="CASCADE"), nullable=False
     )
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     month: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -76,10 +76,10 @@ class BudgetProjectMonthPlan(Base):
 class Project(Base):
     __tablename__ = "projects"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     budget_project_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("budget_projects.id", ondelete="SET NULL"), nullable=True
+        GUID(), ForeignKey("budget_projects.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -112,7 +112,7 @@ class Employee(Base):
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     is_position: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Personal data (not required for positions)
@@ -168,12 +168,12 @@ class EmployeeProject(Base):
         CheckConstraint("rate > 0", name="chk_rate_positive"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     employee_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="CASCADE"), nullable=False
+        GUID(), ForeignKey("employees.id", ondelete="CASCADE"), nullable=False
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+        GUID(), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
     rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
     valid_from: Mapped[date] = mapped_column(Date, nullable=False)
@@ -197,9 +197,9 @@ class AssignmentMonthRate(Base):
         CheckConstraint("rate > 0", name="chk_rate_positive"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     assignment_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("employee_projects.id", ondelete="CASCADE"), nullable=False
+        GUID(), ForeignKey("employee_projects.id", ondelete="CASCADE"), nullable=False
     )
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     month: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -219,9 +219,9 @@ class SalaryRecord(Base):
         CheckConstraint("month BETWEEN 1 AND 12", name="chk_month_range"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     employee_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="CASCADE"), nullable=False
+        GUID(), ForeignKey("employees.id", ondelete="CASCADE"), nullable=False
     )
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     month: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -257,9 +257,9 @@ class ProjectMonthPlan(Base):
         CheckConstraint("month BETWEEN 1 AND 12", name="chk_project_month_plan_1_12"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+        GUID(), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     month: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -279,9 +279,9 @@ class BudgetSnapshot(Base):
         CheckConstraint("month BETWEEN 1 AND 12", name="chk_snapshot_month"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+        GUID(), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     month: Mapped[int] = mapped_column(Integer, nullable=False)

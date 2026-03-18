@@ -2,15 +2,16 @@ import uuid
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.services.import_employees import parse_employee_excel
 
 from app.config import settings
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.dependencies import get_current_user
 from app.models import Employee, EmployeeProject, Project, SalaryRecord, User
+from app.utils import escape_like
 from app.schemas.employee import (
     EmployeeCreate,
     EmployeeHire,
@@ -18,9 +19,11 @@ from app.schemas.employee import (
     EmployeeListItem,
     EmployeeOut,
     EmployeeUpdate,
+    SalaryBatchUpsert,
     SalaryRecordOut,
     SalaryRecordUpsert,
 )
+from app.services.calc import maybe_recalculate_year_background
 from app.services.employees_service import (
     build_employee_out,
     build_list_item,
@@ -60,18 +63,19 @@ def list_employees(
     if is_position is not None:
         q = q.filter(Employee.is_position == is_position)
     if title:
-        q = q.filter(Employee.title.ilike(f"%{title}%"))
+        q = q.filter(Employee.title.ilike(f"%{escape_like(title)}%", escape="\\"))
     if department:
-        q = q.filter(Employee.department.ilike(f"%{department}%"))
+        q = q.filter(Employee.department.ilike(f"%{escape_like(department)}%", escape="\\"))
     if specialization:
-        q = q.filter(Employee.specialization.ilike(f"%{specialization}%"))
+        q = q.filter(Employee.specialization.ilike(f"%{escape_like(specialization)}%", escape="\\"))
     if search:
-        term = f"%{search}%"
+        safe = escape_like(search)
+        term = f"%{safe}%"
         q = q.filter(
-            (Employee.first_name.ilike(term))
-            | (Employee.last_name.ilike(term))
-            | (Employee.middle_name.ilike(term))
-            | (Employee.title.ilike(term))
+            (Employee.first_name.ilike(term, escape="\\"))
+            | (Employee.last_name.ilike(term, escape="\\"))
+            | (Employee.middle_name.ilike(term, escape="\\"))
+            | (Employee.title.ilike(term, escape="\\"))
         )
     if project_id:
         q = q.join(Employee.employee_projects).filter(EmployeeProject.project_id == project_id)
@@ -315,6 +319,7 @@ def upsert_salary(
     year: int,
     month: int,
     body: SalaryRecordUpsert,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -344,7 +349,56 @@ def upsert_salary(
 
     db.commit()
     db.refresh(rec)
+    background_tasks.add_task(maybe_recalculate_year_background, SessionLocal, year)
     return SalaryRecordOut.from_orm_with_total(rec)
+
+
+@router.put("/{employee_id}/salary/batch", response_model=list[SalaryRecordOut])
+def batch_upsert_salary(
+    employee_id: uuid.UUID,
+    body: SalaryBatchUpsert,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Upsert multiple salary records for an employee in a single transaction."""
+    emp = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    result = []
+    for item in body.records:
+        if not 1 <= item.month <= 12:
+            raise HTTPException(status_code=400, detail=f"Month {item.month} must be 1-12")
+
+        rec = (
+            db.query(SalaryRecord)
+            .filter(
+                SalaryRecord.employee_id == employee_id,
+                SalaryRecord.year == body.year,
+                SalaryRecord.month == item.month,
+            )
+            .first()
+        )
+        data = item.model_dump(exclude={"month"})
+        if rec:
+            for field, value in data.items():
+                setattr(rec, field, value)
+        else:
+            rec = SalaryRecord(
+                employee_id=employee_id,
+                year=body.year,
+                month=item.month,
+                **data,
+            )
+            db.add(rec)
+        result.append(rec)
+
+    db.commit()
+    for rec in result:
+        db.refresh(rec)
+    background_tasks.add_task(maybe_recalculate_year_background, SessionLocal, body.year)
+    return [SalaryRecordOut.from_orm_with_total(r) for r in result]
 
 
 @router.delete("/{employee_id}/salary/{year}/{month}", status_code=status.HTTP_204_NO_CONTENT)

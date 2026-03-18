@@ -34,11 +34,11 @@ class TestAuth:
 
     def test_me_unauthenticated(self, client):
         r = client.get("/auth/me")
-        assert r.status_code == 403  # HTTPBearer returns 403 when no header
+        assert r.status_code == 401  # Cookie-first auth returns 401 when no credentials
 
-    def test_protected_route_no_token(self, client):
+    def test_protected_route_no_token(self, client):  # noqa
         r = client.get("/employees")
-        assert r.status_code == 403
+        assert r.status_code == 401  # no credentials → 401 Unauthorized
 
     def test_protected_route_bad_token(self, client):
         r = client.get("/employees", headers={"Authorization": "Bearer bad.token.here"})

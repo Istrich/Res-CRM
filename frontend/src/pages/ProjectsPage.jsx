@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getProjects, createProject, deleteProject, getBudgetProjects } from '../api'
 import { useYearStore } from '../store/year'
 import { fmt, statusLabel, statusColor } from '../utils'
+import { useDebounce } from '../utils/hooks'
 import Modal from '../components/ui/Modal'
 import Confirm from '../components/ui/Confirm'
 
@@ -13,14 +14,15 @@ export default function ProjectsPage() {
   const qc = useQueryClient()
 
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
   const [filterBP, setFilterBP] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [form, setForm] = useState({ name: '', budget_project_id: '' })
 
   const { data: projects = [], isLoading } = useQuery({
-    queryKey: ['projects', { search, budget_project_id: filterBP, year }],
-    queryFn: () => getProjects({ search: search || undefined, budget_project_id: filterBP || undefined, year }),
+    queryKey: ['projects', { search: debouncedSearch, budget_project_id: filterBP, year }],
+    queryFn: () => getProjects({ search: debouncedSearch || undefined, budget_project_id: filterBP || undefined, year }),
   })
 
   const { data: budgetProjects = [] } = useQuery({
