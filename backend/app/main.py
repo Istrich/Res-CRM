@@ -18,6 +18,7 @@ from app.models import Base  # noqa: F401 — imports all models
 from app.routers import (
     assignments,
     auth,
+    backup,
     budget_projects,
     budgets,
     dashboard,
@@ -108,6 +109,7 @@ app.include_router(assignments.router)
 app.include_router(budgets.router)
 app.include_router(dashboard.router)
 app.include_router(exports.router)
+app.include_router(backup.router)
 
 
 # ---------------------------------------------------------------------------

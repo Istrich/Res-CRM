@@ -25,14 +25,22 @@
 ```bash
 # Корень репозитория
 docker compose up -d
-docker compose exec backend alembic upgrade head
+# Миграции при старте backend выполняются через docker-entrypoint.sh (ручной alembic при необходимости: docker compose exec backend alembic upgrade head)
 
 cd frontend
 npm install
 npm run dev
 ```
 
-- **Frontend:** http://localhost:3000 (Vite проксирует `/api` на backend).
+- **Frontend (разработка):** http://localhost:3000 (Vite проксирует `/api` на backend).
+
+### Весь стек в Docker (автозапуск / прод)
+
+```bash
+docker compose --profile full up -d --build
+```
+
+- **Приложение:** http://localhost:3000 (nginx + статика, `/api` → backend). Контейнеры с `restart: unless-stopped`.
 - **Backend:** http://localhost:8000.
 - **Swagger:** http://localhost:8000/docs.
 
@@ -58,7 +66,7 @@ npm run dev
 | `app/dependencies.py` | `get_current_user` (JWT из HttpOnly cookie + Bearer fallback), зависимость для защищённых эндпоинтов |
 | `app/models/__init__.py` | Все ORM-модели (User, BudgetProject, Project, Employee, EmployeeProject, AssignmentMonthRate, SalaryRecord, BudgetSnapshot) |
 | `app/schemas/` | Pydantic-схемы: auth, employee (в т.ч. SalaryRecordUpsert/Out, EmployeeListItem с monthly_totals, monthly_is_raise), project, assignment (AssignmentMonthRateSet и др.) |
-| `app/routers/` | auth, employees, projects, budget_projects, assignments, budgets, dashboard, exports |
+| `app/routers/` | auth, employees, projects, budget_projects, assignments, budgets, dashboard, exports, backup |
 | `app/middleware.py` | AccessLogMiddleware (structured access log) |
 | `app/types.py` | GUID SQLAlchemy type (PG UUID / SQLite CHAR(36)) |
 | `app/utils.py` | escape_like() для LIKE/ILIKE safety |
@@ -76,7 +84,7 @@ npm run dev
 |------|------------|
 | `main.jsx` | Роуты (React Router), RequireAuth, QueryClientProvider, Layout как обёртка для авторизованных страниц |
 | `api/client.js` | Axios instance `baseURL: '/api'`, `withCredentials=true` (cookie `access_token`), 401 → редирект на /login |
-| `api/index.js` | Все вызовы API (auth, employees, salary, projects, assignments, budget-projects, budgets, dashboard, exports) |
+| `api/index.js` | Все вызовы API (auth, employees, salary, projects, assignments, budget-projects, budgets, dashboard, exports, backup) |
 | `store/auth.js` | Zustand: флаг `isAuthenticated` (в `sessionStorage`), login/logout |
 | `store/year.js` | Zustand: year (выбор года в сайдбаре) |
 | `components/layout/Layout.jsx` | Сайдбар: логотип, выбор года, навигация (Дашборд, Сотрудники, Найм, Проекты, Бюджетные проекты, Бюджеты), выход |
@@ -164,5 +172,6 @@ npm run dev
 - **Budgets:** POST /budgets/recalculate?year=, GET /budgets/overview, GET /budgets/projects/:id, GET /budgets/budget-projects/:id, GET /budgets/last-calculated и др.
 - **Dashboard:** GET /dashboard/summary, by-project, by-department, by-specialization, movements, available-years.
 - **Exports:** GET /exports/employees, /exports/projects-budget, /exports/budget-projects, /exports/payroll (все с ?year=, ответ blob).
+- **Backup (PostgreSQL):** GET /backup/export (файл `.dump`), POST /backup/restore (multipart `file` + `confirm=true`). UI: **Настройки** `/settings`.
 
 Использование: при добавлении фич или отладке смотреть соответствующий роутер в `backend/app/routers/` и вызовы в `frontend/src/api/index.js` и на страницах.

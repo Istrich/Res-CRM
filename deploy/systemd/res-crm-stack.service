@@ -1,0 +1,27 @@
+# Linux (systemd): автозапуск стека после перезагрузки.
+#
+# Установка:
+#   1. sudo cp deploy/systemd/res-crm-stack.service /etc/systemd/system/
+#   2. sudo sed -i 's|REPLACE_WITH_ABSOLUTE_PATH_TO_REPO|/home/you/Res-CRM|g' /etc/systemd/system/res-crm-stack.service
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now res-crm-stack.service
+#
+# Требуется: Docker + docker compose plugin, в каталоге репозитория файл backend/.env
+
+[Unit]
+Description=Res-CRM (PostgreSQL + backend + frontend)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=REPLACE_WITH_ABSOLUTE_PATH_TO_REPO
+# Профиль full поднимает контейнер frontend (nginx + SPA на :3000)
+ExecStart=/usr/bin/docker compose --profile full up -d --build
+ExecStop=/usr/bin/docker compose --profile full down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

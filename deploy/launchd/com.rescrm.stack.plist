@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS: автозапуск после входа в систему (Docker Desktop должен стартовать сам).
+
+  1. Подставь путь к репозиторию в WorkingDirectory и в ProgramArguments (последний аргумент cd).
+  2. cp deploy/launchd/com.rescrm.stack.plist ~/Library/LaunchAgents/
+  3. launchctl load ~/Library/LaunchAgents/com.rescrm.stack.plist
+
+  Или однократно из каталога репозитория:
+    docker compose --profile full up -d --build
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.rescrm.stack</string>
+  <key>WorkingDirectory</key>
+  <string>/ABSOLUTE/PATH/TO/Res-CRM</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd /ABSOLUTE/PATH/TO/Res-CRM &amp;&amp; docker compose --profile full up -d --build</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/res-crm-stack.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/res-crm-stack.err</string>
+</dict>
+</plist>

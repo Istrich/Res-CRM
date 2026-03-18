@@ -12,6 +12,7 @@ const NAV = [
   { to: '/projects', icon: '📁', label: 'Проекты' },
   { to: '/budget-projects', icon: '💼', label: 'Бюджетные проекты' },
   { to: '/budgets', icon: '💰', label: 'Бюджеты' },
+  { to: '/settings', icon: '⚙️', label: 'Настройки' },
 ]
 
 export default function Layout() {

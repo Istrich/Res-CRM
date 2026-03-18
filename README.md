@@ -47,6 +47,10 @@ npm run dev
 - Rate limiting: `POST /auth/login` ограничен до `5/minute` на IP (при превышении возвращается `429 Too Many Requests`).
 - `GET /health` делает запрос в БД (`SELECT 1`) и возвращает `503`, если БД недоступна.
 
+### Полный бэкап БД (Настройки)
+
+В меню **Настройки** (`/settings`): скачать дамп PostgreSQL (`pg_dump -Fc`) и при необходимости восстановить из того же файла. Восстановление **полностью заменяет** схему `public` в текущей базе. Работает только при `DATABASE_URL` с PostgreSQL; в образ backend добавлен пакет `postgresql-client`. Лимиты API: экспорт `10/min`, восстановление `5/hour` на IP.
+
 Для cookie-аутентификации из другого origin’а важно, чтобы `CORS_ORIGINS` в backend был задан явным origin (не `*`) и чтобы браузер передавал cookie (`withCredentials=true` в axios). В локальной разработке это обычно обходится Vite proxy (одно origin).
 
 ---
@@ -76,7 +80,7 @@ Res-CRM/
 │   │   ├── utils.py           # escape_like() for LIKE/ILIKE safety
 │   │   ├── models/           # ORM: User, BudgetProject, BudgetProjectMonthPlan, Project, Employee, EmployeeProject, AssignmentMonthRate, SalaryRecord, BudgetSnapshot
 │   │   ├── schemas/          # Pydantic (employee, project, assignment, auth)
-│   │   ├── routers/          # auth, employees, projects, budget_projects, assignments, budgets, dashboard, exports
+│   │   ├── routers/          # auth, employees, projects, budget_projects, assignments, budgets, dashboard, exports, backup
 │   │   └── services/         # auth.py, calc.py, dashboard_service.py, employees_service.py, budget_plan.py, export.py, import_employees.py
 │   ├── migrations/           # Alembic (0001..0005_budget_project_month_plans)
 │   ├── requirements.txt
@@ -86,7 +90,7 @@ Res-CRM/
 │   └── src/
 │       ├── api/              # client.js (axios, /api, withCredentials cookie `access_token`), index.js (все вызовы API)
 │       ├── components/        # Layout, Modal, Confirm, EmployeeForm, AssignmentManager
-│       ├── pages/             # Login, Dashboard, Employees, EmployeeDetail, Hiring, Projects, ProjectDetail, BudgetProjects, BudgetProjectDetail, Budgets
+│       ├── pages/             # Login, Dashboard, Employees, EmployeeDetail, Hiring, Projects, ProjectDetail, BudgetProjects, BudgetProjectDetail, Budgets, Settings
 │       ├── store/             # auth.js, year.js (Zustand)
 │       └── utils/             # fmt, fmtDate, MONTHS, statusLabel, statusColor, downloadBlob
 │
@@ -157,6 +161,26 @@ COOKIE_SECURE=false
 # Опционально
 DEBUG_MODE=false
 ```
+
+---
+
+## Автозапуск после перезагрузки (бэкенд + фронт)
+
+Весь стек в Docker (PostgreSQL, API, статический фронт в nginx на **:3000**):
+
+```bash
+cd Res-CRM
+docker compose --profile full up -d --build
+```
+
+- Без профиля `full` поднимаются только **db** и **backend** (как раньше). С профилем добавляется **frontend** (сборка Vite → nginx, прокси `/api` на backend).
+- У контейнеров `restart: unless-stopped` — после перезагрузки хоста они поднимутся сами, **если** демон Docker стартует при загрузке.
+
+**Linux (systemd):** шаблон сервиса — [deploy/systemd/res-crm-stack.service](deploy/systemd/res-crm-stack.service) (подставь `WorkingDirectory`, `enable --now`).
+
+**macOS:** Docker Desktop → Settings → General → **Start Docker Desktop when you sign in**; опционально LaunchAgent — [deploy/launchd/com.rescrm.stack.plist](deploy/launchd/com.rescrm.stack.plist).
+
+При старте backend автоматически выполняется `alembic upgrade head` (см. `backend/docker-entrypoint.sh`).
 
 ---
 

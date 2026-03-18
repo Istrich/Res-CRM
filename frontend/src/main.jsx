@@ -14,6 +14,7 @@ import ProjectDetailPage from './pages/ProjectDetailPage'
 import BudgetProjectsPage from './pages/BudgetProjectsPage'
 import BudgetProjectDetailPage from './pages/BudgetProjectDetailPage'
 import BudgetsPage from './pages/BudgetsPage'
+import SettingsPage from './pages/SettingsPage'
 import DashboardPage from './pages/DashboardPage'
 import HiringPage from './pages/HiringPage'
 
@@ -51,6 +52,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <Route path="budget-projects" element={<BudgetProjectsPage />} />
             <Route path="budget-projects/:id" element={<BudgetProjectDetailPage />} />
             <Route path="budgets" element={<BudgetsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

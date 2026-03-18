@@ -87,3 +87,19 @@ export const exportEmployees = (year) => api.get('/exports/employees', { params:
 export const exportProjectsBudget = (year) => api.get('/exports/projects-budget', { params: { year }, responseType: 'blob' }).then(r => r.data)
 export const exportBudgetProjects = (year) => api.get('/exports/budget-projects', { params: { year }, responseType: 'blob' }).then(r => r.data)
 export const exportPayroll = (year) => api.get('/exports/payroll', { params: { year }, responseType: 'blob' }).then(r => r.data)
+
+/** Full DB backup (.dump). Returns { blob, filename } for download. */
+export async function downloadFullBackup() {
+  const r = await api.get('/backup/export', { responseType: 'blob' })
+  const cd = r.headers['content-disposition'] || ''
+  const m = cd.match(/filename="?([^";]+)"?/)
+  const filename = m ? m[1] : 'res-crm-backup.dump'
+  return { blob: r.data, filename }
+}
+
+export function restoreFullBackup(file) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('confirm', 'true')
+  return api.post('/backup/restore', form).then((res) => res.data)
+}

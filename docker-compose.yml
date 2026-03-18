@@ -35,5 +35,17 @@ services:
       retries: 3
       start_period: 10s
 
+  # UI + nginx proxy /api → backend. Включение: docker compose --profile full up -d
+  # Открыть приложение: http://localhost:3000
+  frontend:
+    profiles: [full]
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
 volumes:
   pgdata:
