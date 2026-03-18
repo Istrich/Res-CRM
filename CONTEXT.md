@@ -12,9 +12,9 @@
 - **Проекты** — рабочие проекты с привязкой к бюджетному проекту. У каждого участника — ставка и период; ставку можно задавать по месяцам (таблица 12 месяцев).
 - **Вознаграждение** — по месяцам: оклад, KPI, фикс. надбавка, разовая премия; флаг «Повышение» (подсветка месяца в таблицах).
 - **Бюджеты** — бюджетные проекты (год, сумма), пересчёт расходов по проектам, снапшоты по месяцам, статусы ok/warning/overrun, экспорты в Excel.
-- **Один пользователь** — JWT, один логин/пароль (admin). Роли не реализованы.
+- **Один пользователь** — JWT хранится в `HttpOnly` cookie `access_token`, один логин/пароль (admin). Роли не реализованы.
 
-Стек: **Backend** — Python 3.11, FastAPI, SQLAlchemy 2, Pydantic, Alembic, PostgreSQL. **Frontend** — React 18, Vite 6, React Router, TanStack Query v5, Zustand, Axios.
+Стек: **Backend** — Python 3.11, FastAPI, SQLAlchemy 2, Pydantic, Alembic, PostgreSQL, slowapi. **Frontend** — React 18, Vite 6, React Router, TanStack Query v5, Zustand, Axios.
 
 ---
 
@@ -55,12 +55,17 @@ npm run dev
 | `app/main.py` | Точка входа FastAPI, CORS, lifespan, подключение роутеров |
 | `app/config.py` | Настройки (pydantic-settings), читает `.env` |
 | `app/database.py` | `engine`, `SessionLocal`, `get_db` |
-| `app/dependencies.py` | `get_current_user` (JWT), зависимость для защищённых эндпоинтов |
+| `app/dependencies.py` | `get_current_user` (JWT из HttpOnly cookie + Bearer fallback), зависимость для защищённых эндпоинтов |
 | `app/models/__init__.py` | Все ORM-модели (User, BudgetProject, Project, Employee, EmployeeProject, AssignmentMonthRate, SalaryRecord, BudgetSnapshot) |
 | `app/schemas/` | Pydantic-схемы: auth, employee (в т.ч. SalaryRecordUpsert/Out, EmployeeListItem с monthly_totals, monthly_is_raise), project, assignment (AssignmentMonthRateSet и др.) |
 | `app/routers/` | auth, employees, projects, budget_projects, assignments, budgets, dashboard, exports |
+| `app/middleware.py` | AccessLogMiddleware (structured access log) |
+| `app/types.py` | GUID SQLAlchemy type (PG UUID / SQLite CHAR(36)) |
+| `app/utils.py` | escape_like() для LIKE/ILIKE safety |
 | `app/services/auth.py` | JWT, bcrypt, get_or_create_admin |
 | `app/services/calc.py` | Расчёт: активность в месяце, зарплатный fallback, расход по проекту/месяцу (с учётом assignment_month_rates), пересчёт года, статусы |
+| `app/services/dashboard_service.py` | Логика dashboard (роутер тонкий, бизнес-логика отдельно) |
+| `app/services/employees_service.py` | Выделенная логика сотрудников (используется роутерами) |
 | `app/services/export.py` | Генерация Excel (сотрудники, проекты, бюджетные проекты, ФОТ) |
 | `app/services/import_employees.py` | Парсинг Excel импорта сотрудников (заголовки, даты, fallback по столбцам) |
 | `migrations/versions/` | Alembic: 0001_initial, 0002_assignment_month_rates, 0003_salary_record_is_raise |
@@ -70,9 +75,9 @@ npm run dev
 | Путь | Назначение |
 |------|------------|
 | `main.jsx` | Роуты (React Router), RequireAuth, QueryClientProvider, Layout как обёртка для авторизованных страниц |
-| `api/client.js` | Axios instance `baseURL: '/api'`, JWT в заголовке, 401 → редирект на /login |
+| `api/client.js` | Axios instance `baseURL: '/api'`, `withCredentials=true` (cookie `access_token`), 401 → редирект на /login |
 | `api/index.js` | Все вызовы API (auth, employees, salary, projects, assignments, budget-projects, budgets, dashboard, exports) |
-| `store/auth.js` | Zustand: token, login, logout |
+| `store/auth.js` | Zustand: флаг `isAuthenticated` (в `sessionStorage`), login/logout |
 | `store/year.js` | Zustand: year (выбор года в сайдбаре) |
 | `components/layout/Layout.jsx` | Сайдбар: логотип, выбор года, навигация (Дашборд, Сотрудники, Найм, Проекты, Бюджетные проекты, Бюджеты), выход |
 | `components/ui/Modal.jsx` | Модальное окно (title, onClose, footer, children) |
@@ -102,10 +107,12 @@ npm run dev
 ## 4. Ключевые потоки данных
 
 - **Год** — выбранный в сайдбаре год хранится в `year` (Zustand). Запросы списков, бюджетов, ЗП, ставок по месяцам передают `year` в API.
-- **Авторизация** — логин → токен в localStorage и в store → заголовок `Authorization: Bearer <token>` на каждый запрос; 401 → очистка токена и редирект на /login.
+- **Авторизация** — `POST /auth/login` устанавливает JWT в `HttpOnly` cookie `access_token` (фронт хранит только флаг `isAuthenticated` в `sessionStorage`); axios делает запросы с `withCredentials=true`; 401 приводит к редиректу на `/login`.
+- **API (опционально):** `get_current_user` читает cookie первым, а Bearer-заголовок поддерживается для внешних API-клиентов.
 - **Список сотрудников** — GET /employees с параметрами (year, search, department, specialization, is_position и др.). При year возвращаются monthly_totals и monthly_is_raise (для подсветки «Повышение»).
 - **Ставки по месяцам на проекте** — GET /projects/:id/employees?year= возвращает для каждого участника monthly_rates (12 значений) и monthly_total_rates (сумма ставок по всем проектам для предупреждения). Изменение: PUT /assignments/:id/rates/:year/:month с телом { rate }.
 - **Зарплата по месяцам** — GET /employees/:id/salary?year=, PUT /employees/:id/salary/:year/:month (salary, kpi_bonus, fixed_bonus, one_time_bonus, is_raise). «Продлить до декабря» делается на фронте несколькими запросами.
+- **Батч-зарплата:** `PUT /employees/:id/salary/batch` — атомарный upsert нескольких месяцев одним запросом.
 - **Пересчёт бюджетов** — POST /budgets/recalculate?year=, дальше чтение через GET /budgets/overview, GET /budgets/projects/:id и т.д.
 - **Импорт сотрудников** — POST /employees/import (JSON массив строк) или POST /employees/import/excel (multipart file). Парсер Excel в backend/app/services/import_employees.py.
 
@@ -119,7 +126,7 @@ npm run dev
 - **Секреты** — не коммитить .env, токены, пароли.
 - **Код** — явная обработка ошибок, без голых except. Логи без секретов. Для нового кода — docstrings, читаемые имена, типы по ситуации.
 - **Фронт** — кнопки, не отправляющие форму, с `type="button"`. TanStack Query v5: invalidateQueries({ queryKey: [...] }). Подтверждения удаления через компонент Confirm с loading.
-- **Production:** в .env задать `CORS_ORIGINS` (не `*`). Токен в localStorage уязвим к XSS; для production предпочтительны HttpOnly cookies (требует доработки бэкенда).
+- **Production:** для cookie-аутентификации задавай `CORS_ORIGINS` явным origin’ом (не `*`) и включай `COOKIE_SECURE=true` на HTTPS. Браузер должен передавать cookie (`withCredentials=true`); в локальной разработке обычно помогает Vite proxy.
 
 ---
 
@@ -149,8 +156,8 @@ npm run dev
 
 ## 8. Краткая шпаргалка по API
 
-- **Auth:** POST /auth/login, GET /auth/me.
-- **Employees:** GET/POST /employees, GET/PATCH/DELETE /employees/:id, GET/PUT/DELETE /employees/:id/salary/:year/:month, POST /employees/import, POST /employees/import/excel, DELETE /employees/all (только при DEBUG_MODE=true).
+- **Auth:** POST /auth/login, POST /auth/logout, GET /auth/me.
+- **Employees:** GET/POST /employees, GET/PATCH/DELETE /employees/:id, GET/PUT/DELETE /employees/:id/salary/:year/:month, PUT /employees/:id/salary/batch, POST /employees/import, POST /employees/import/excel, DELETE /employees/all (только при DEBUG_MODE=true).
 - **Projects:** GET/POST /projects, GET/PATCH/DELETE /projects/:id, GET /projects/:id/employees?year=, DELETE /projects/:id/employees/:assignmentId.
 - **Assignments:** POST /assignments, PATCH/DELETE /assignments/:id, PUT /assignments/:id/rates/:year/:month.
 - **Budget projects:** GET/POST /budget-projects, GET/PATCH/DELETE /budget-projects/:id.

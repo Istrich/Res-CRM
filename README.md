@@ -10,6 +10,9 @@
 cd Res-CRM
 docker compose up -d
 
+# Важно: docker compose использует `backend/.env`
+# Если его нет — скопируй `backend/.env.example` -> `backend/.env` и поправь значения под себя
+
 # Миграции (один раз или после изменений схемы)
 docker compose exec backend alembic upgrade head
 ```
@@ -33,11 +36,26 @@ npm run dev
 
 ---
 
+## Авторизация и безопасность
+
+- `POST /auth/login`:
+  - проверяет логин/пароль,
+  - создаёт JWT и сохраняет его в `HttpOnly` cookie `access_token`
+  - cookie получает `SameSite=Lax`, а флаг `Secure` управляется настройкой `COOKIE_SECURE`.
+- `POST /auth/logout` удаляет cookie `access_token`.
+- `get_current_user` сначала пытается прочитать JWT из cookie, затем (опционально) из заголовка `Authorization: Bearer ...` для API-клиентов.
+- Rate limiting: `POST /auth/login` ограничен до `5/minute` на IP (при превышении возвращается `429 Too Many Requests`).
+- `GET /health` делает запрос в БД (`SELECT 1`) и возвращает `503`, если БД недоступна.
+
+Для cookie-аутентификации из другого origin’а важно, чтобы `CORS_ORIGINS` в backend был задан явным origin (не `*`) и чтобы браузер передавал cookie (`withCredentials=true` в axios). В локальной разработке это обычно обходится Vite proxy (одно origin).
+
+---
+
 ## Стек
 
 | Часть     | Технологии |
 |----------|------------|
-| Backend  | Python 3.11, FastAPI, SQLAlchemy 2, Pydantic, Alembic, PostgreSQL |
+| Backend  | Python 3.11, FastAPI, SQLAlchemy 2, Pydantic, Alembic, PostgreSQL, slowapi |
 | Frontend | React 18, Vite 6, React Router 6, TanStack Query v5, Zustand, Axios |
 | Инфра    | Docker Compose (PostgreSQL 16 + backend) |
 
@@ -52,18 +70,21 @@ Res-CRM/
 │   │   ├── main.py           # FastAPI app, CORS, lifespan, роутеры
 │   │   ├── config.py         # pydantic-settings
 │   │   ├── database.py       # SQLAlchemy engine, SessionLocal
-│   │   ├── dependencies.py   # get_current_user (JWT)
+│   │   ├── dependencies.py   # get_current_user (JWT из cookie + Bearer fallback)
+│   │   ├── middleware.py      # AccessLogMiddleware (structured access log)
+│   │   ├── types.py           # GUID SQLAlchemy type (PG UUID / SQLite CHAR(36))
+│   │   ├── utils.py           # escape_like() for LIKE/ILIKE safety
 │   │   ├── models/           # ORM: User, BudgetProject, BudgetProjectMonthPlan, Project, Employee, EmployeeProject, AssignmentMonthRate, SalaryRecord, BudgetSnapshot
 │   │   ├── schemas/          # Pydantic (employee, project, assignment, auth)
 │   │   ├── routers/          # auth, employees, projects, budget_projects, assignments, budgets, dashboard, exports
-│   │   └── services/         # auth.py, calc.py, budget_plan.py, export.py, import_employees.py
+│   │   └── services/         # auth.py, calc.py, dashboard_service.py, employees_service.py, budget_plan.py, export.py, import_employees.py
 │   ├── migrations/           # Alembic (0001..0005_budget_project_month_plans)
 │   ├── requirements.txt
 │   └── .env                  # DATABASE_URL, SECRET_KEY, ADMIN_*
 │
 ├── frontend/
 │   └── src/
-│       ├── api/              # client.js (axios, /api, JWT), index.js (все вызовы API)
+│       ├── api/              # client.js (axios, /api, withCredentials cookie `access_token`), index.js (все вызовы API)
 │       ├── components/        # Layout, Modal, Confirm, EmployeeForm, AssignmentManager
 │       ├── pages/             # Login, Dashboard, Employees, EmployeeDetail, Hiring, Projects, ProjectDetail, BudgetProjects, BudgetProjectDetail, Budgets
 │       ├── store/             # auth.js, year.js (Zustand)
@@ -126,6 +147,15 @@ ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=480
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
+
+# Ограничение origin для CORS при использовании cookies (в production не оставляй '*')
+CORS_ORIGINS=*
+
+# Secure для cookie: выключи для локального HTTP, включи для HTTPS
+COOKIE_SECURE=false
+
+# Опционально
+DEBUG_MODE=false
 ```
 
 ---
