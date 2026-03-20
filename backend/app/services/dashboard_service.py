@@ -23,7 +23,7 @@ from app.services.calc import (
 
 
 def get_summary(db: Session, year: int) -> dict:
-    """Top-level KPIs: headcount, total spend, monthly totals."""
+    """Top-level KPIs: headcount, total spend, monthly fact and plan totals."""
     today = date.today()
 
     employees = db.query(Employee).filter(Employee.is_position == False).all()  # noqa: E712
@@ -43,6 +43,14 @@ def get_summary(db: Session, year: int) -> dict:
     )
     monthly_spend = {row[0]: float(row[1]) for row in monthly_rows}
 
+    plan_rows = (
+        db.query(BudgetProjectMonthPlan.month, func.sum(BudgetProjectMonthPlan.amount))
+        .filter(BudgetProjectMonthPlan.year == year)
+        .group_by(BudgetProjectMonthPlan.month)
+        .all()
+    )
+    monthly_plan = {row[0]: float(row[1]) for row in plan_rows}
+
     return {
         "year": year,
         "employee_count": len(employees),
@@ -51,6 +59,10 @@ def get_summary(db: Session, year: int) -> dict:
         "total_spend": sum(monthly_spend.values()),
         "monthly_spend": [
             {"month": m, "amount": monthly_spend.get(m, 0)}
+            for m in range(1, 13)
+        ],
+        "monthly_plan": [
+            {"month": m, "amount": monthly_plan.get(m, 0)}
             for m in range(1, 13)
         ],
     }

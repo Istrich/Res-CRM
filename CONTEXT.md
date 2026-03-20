@@ -85,7 +85,7 @@ docker compose --profile full up -d --build
 | `app/utils.py` | escape_like() для LIKE/ILIKE safety |
 | `app/services/auth.py` | JWT, bcrypt, get_or_create_admin |
 | `app/services/calc.py` | Расчёт: активность в месяце, зарплатный fallback, расход по проекту/месяцу (с учётом assignment_month_rates), пересчёт года, статусы; **`get_working_hours_map()` и `calc_hourly_rate()` для расчёта часовых ставок** |
-| `app/services/dashboard_service.py` | Логика dashboard (роутер тонкий, бизнес-логика отдельно); **`get_hourly_rates()` — почасовые ставки по специализациям** |
+| `app/services/dashboard_service.py` | Логика dashboard (роутер тонкий, бизнес-логика отдельно); **`get_hourly_rates()` — почасовые ставки по специализациям**; **`get_summary()` — добавлено поле `monthly_plan` (суммарный план по `BudgetProjectMonthPlan` за год)** |
 | `app/services/employees_service.py` | Выделенная логика сотрудников (используется роутерами) |
 | `app/services/export.py` | Генерация Excel (сотрудники, проекты, бюджетные проекты, ФОТ) |
 | `app/services/import_employees.py` | Парсинг Excel импорта сотрудников (заголовки, даты, fallback по столбцам) |
@@ -107,6 +107,7 @@ docker compose --profile full up -d --build
 | `components/AssignmentManager.jsx` | Блок назначений на проекты в карточке сотрудника |
 | `pages/LoginPage.jsx` | Форма логина |
 | `pages/DashboardPage.jsx` | Дашборд (год из store): вкладки Overview, Projects, BudgetProjects, Departments, Specializations, **HourlyRates** |
+| `pages/dashboard/OverviewTab.jsx` | Вкладка «Общее»: KPI-карточки; **расходы по месяцам план/факт** (прошлые месяцы — «Факт» + «План» рядом, будущие — только «План»); **расходы по проектам** (столбчатая диаграмма, все проекты, горизонтальный скролл); **круговые диаграммы** по подразделениям и специализациям; **движение персонала** (LineChart, клик → детализация) |
 | `pages/dashboard/HourlyRatesTab.jsx` | Вкладка дашборда: часовые ставки по специализациям (мин/макс/среднее по месяцам), bar-chart средней ставки, предупреждение если рабочие часы не настроены |
 | `pages/EmployeesPage.jsx` | Список сотрудников, фильтры, создание, импорт (таблица/Excel), экспорт, удаление, «Удалить всех» (отладка) |
 | `pages/EmployeeDetailPage.jsx` | Карточка сотрудника: редактирование, назначения, таблица ЗП по месяцам (в т.ч. «Повышение», продлить до декабря) |
@@ -186,7 +187,7 @@ docker compose --profile full up -d --build
 - **Assignments:** POST /assignments, PATCH/DELETE /assignments/:id, PUT /assignments/:id/rates/:year/:month.
 - **Budget projects:** GET/POST /budget-projects, GET/PATCH/DELETE /budget-projects/:id.
 - **Budgets:** POST /budgets/recalculate?year=, GET /budgets/overview, GET /budgets/projects/:id, GET /budgets/budget-projects/:id, GET /budgets/last-calculated и др.
-- **Dashboard:** GET /dashboard/summary, by-project, by-project-monthly, by-budget-project-monthly, by-department, by-department-monthly, by-specialization, by-specialization-monthly, movements, **hourly-rates**, available-years (все с ?year=).
+- **Dashboard:** GET /dashboard/summary (возвращает `monthly_spend` и **`monthly_plan`** — сумма `BudgetProjectMonthPlan` по месяцам), by-project, by-project-monthly, by-budget-project-monthly, by-department, by-department-monthly, by-specialization, by-specialization-monthly, movements, **hourly-rates**, available-years (все с ?year=).
 - **Settings:** GET /settings/working-hours?year= (рабочие часы 12 месяцев), PUT /settings/working-hours?year= (upsert, тело `{items: [{month, hours}×12]}`).
 - **Exports:** GET /exports/employees, /exports/projects-budget, /exports/budget-projects, /exports/payroll (все с ?year=, ответ blob).
 - **Backup (PostgreSQL):** GET /backup/export (файл `.dump`), POST /backup/restore (multipart `file` + `confirm=true`). UI: **Настройки** `/settings`.
