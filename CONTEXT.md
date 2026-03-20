@@ -77,19 +77,19 @@ docker compose --profile full up -d --build
 | `app/config.py` | Настройки (pydantic-settings), читает `.env` |
 | `app/database.py` | `engine`, `SessionLocal`, `get_db` |
 | `app/dependencies.py` | `get_current_user` (JWT из HttpOnly cookie + Bearer fallback), зависимость для защищённых эндпоинтов |
-| `app/models/__init__.py` | Все ORM-модели (User, BudgetProject, Project, Employee, EmployeeProject, AssignmentMonthRate, SalaryRecord, BudgetSnapshot) |
-| `app/schemas/` | Pydantic-схемы: auth, employee (в т.ч. SalaryRecordUpsert/Out, EmployeeListItem с monthly_totals, monthly_is_raise), project, assignment (AssignmentMonthRateSet и др.) |
-| `app/routers/` | auth, employees, projects, budget_projects, assignments, budgets, dashboard, exports, backup |
+| `app/models/__init__.py` | Все ORM-модели (User, BudgetProject, BudgetProjectMonthPlan, Project, ProjectMonthPlan, Employee, EmployeeProject, AssignmentMonthRate, SalaryRecord, BudgetSnapshot, **WorkingHoursYearMonth**) |
+| `app/schemas/` | Pydantic-схемы: auth, employee (в т.ч. SalaryRecordUpsert/Out, EmployeeListItem с monthly_totals, monthly_is_raise), project, assignment (AssignmentMonthRateSet и др.), settings (WorkingHoursMonthItem, WorkingHoursUpsert, WorkingHoursOut) |
+| `app/routers/` | auth, employees, projects, budget_projects, assignments, budgets, dashboard, exports, backup, **settings** |
 | `app/middleware.py` | AccessLogMiddleware (structured access log) |
 | `app/types.py` | GUID SQLAlchemy type (PG UUID / SQLite CHAR(36)) |
 | `app/utils.py` | escape_like() для LIKE/ILIKE safety |
 | `app/services/auth.py` | JWT, bcrypt, get_or_create_admin |
-| `app/services/calc.py` | Расчёт: активность в месяце, зарплатный fallback, расход по проекту/месяцу (с учётом assignment_month_rates), пересчёт года, статусы |
-| `app/services/dashboard_service.py` | Логика dashboard (роутер тонкий, бизнес-логика отдельно) |
+| `app/services/calc.py` | Расчёт: активность в месяце, зарплатный fallback, расход по проекту/месяцу (с учётом assignment_month_rates), пересчёт года, статусы; **`get_working_hours_map()` и `calc_hourly_rate()` для расчёта часовых ставок** |
+| `app/services/dashboard_service.py` | Логика dashboard (роутер тонкий, бизнес-логика отдельно); **`get_hourly_rates()` — почасовые ставки по специализациям** |
 | `app/services/employees_service.py` | Выделенная логика сотрудников (используется роутерами) |
 | `app/services/export.py` | Генерация Excel (сотрудники, проекты, бюджетные проекты, ФОТ) |
 | `app/services/import_employees.py` | Парсинг Excel импорта сотрудников (заголовки, даты, fallback по столбцам) |
-| `migrations/versions/` | Alembic: 0001_initial, 0002_assignment_month_rates, 0003_salary_record_is_raise |
+| `migrations/versions/` | Alembic: 0001_initial, 0002_assignment_month_rates, 0003_salary_record_is_raise, 0004_position_planned_fields, 0005_budget_project_month_plans, 0006_project_month_plans, 0007_add_indexes. **Внимание:** таблица `working_hours_year_months` (модель WorkingHoursYearMonth) создаётся через `Base.metadata.create_all` при первом запуске; для существующих БД требуется миграция 0008 |
 
 ### Frontend (`frontend/src/`)
 
@@ -97,7 +97,7 @@ docker compose --profile full up -d --build
 |------|------------|
 | `main.jsx` | Роуты (React Router), RequireAuth, QueryClientProvider, Layout как обёртка для авторизованных страниц |
 | `api/client.js` | Axios instance `baseURL: '/api'`, `withCredentials=true` (cookie `access_token`), 401 → редирект на /login |
-| `api/index.js` | Все вызовы API (auth, employees, salary, projects, assignments, budget-projects, budgets, dashboard, exports, backup) |
+| `api/index.js` | Все вызовы API (auth, employees, salary, projects, assignments, budget-projects, budgets, dashboard, exports, backup, **settings**) |
 | `store/auth.js` | Zustand: флаг `isAuthenticated` (в `sessionStorage`), login/logout |
 | `store/year.js` | Zustand: year (выбор года в сайдбаре) |
 | `components/layout/Layout.jsx` | Сайдбар: логотип, выбор года, навигация (Дашборд, Сотрудники, Найм, Проекты, Бюджетные проекты, Бюджеты), выход |
@@ -106,7 +106,8 @@ docker compose --profile full up -d --build
 | `components/EmployeeForm.jsx` | Форма сотрудника/позиции (используется на странице сотрудников и в карточке) |
 | `components/AssignmentManager.jsx` | Блок назначений на проекты в карточке сотрудника |
 | `pages/LoginPage.jsx` | Форма логина |
-| `pages/DashboardPage.jsx` | Дашборд (год из store) |
+| `pages/DashboardPage.jsx` | Дашборд (год из store): вкладки Overview, Projects, BudgetProjects, Departments, Specializations, **HourlyRates** |
+| `pages/dashboard/HourlyRatesTab.jsx` | Вкладка дашборда: часовые ставки по специализациям (мин/макс/среднее по месяцам), bar-chart средней ставки, предупреждение если рабочие часы не настроены |
 | `pages/EmployeesPage.jsx` | Список сотрудников, фильтры, создание, импорт (таблица/Excel), экспорт, удаление, «Удалить всех» (отладка) |
 | `pages/EmployeeDetailPage.jsx` | Карточка сотрудника: редактирование, назначения, таблица ЗП по месяцам (в т.ч. «Повышение», продлить до декабря) |
 | `pages/HiringPage.jsx` | Список позиций (getEmployees с is_position: true) |
@@ -115,6 +116,7 @@ docker compose --profile full up -d --build
 | `pages/BudgetProjectsPage.jsx` | Бюджетные проекты за год, создание, удаление, экспорт |
 | `pages/BudgetProjectDetailPage.jsx` | Карточка бюджетного проекта, редактирование, удаление |
 | `pages/BudgetsPage.jsx` | Пересчёт, сводка, экспорты (проекты, бюджетные, ФОТ) |
+| `pages/SettingsPage.jsx` | Настройки: бэкап/восстановление PostgreSQL, **редактирование рабочих часов по месяцам для расчёта часовой ставки** |
 | `utils/index.js` | fmt, fmtDate, MONTHS, statusLabel, statusColor, downloadBlob |
 
 ### Конфигурация
@@ -136,6 +138,7 @@ docker compose --profile full up -d --build
 - **Батч-зарплата:** `PUT /employees/:id/salary/batch` — атомарный upsert нескольких месяцев одним запросом.
 - **Пересчёт бюджетов** — POST /budgets/recalculate?year=, дальше чтение через GET /budgets/overview, GET /budgets/projects/:id и т.д.
 - **Импорт сотрудников** — POST /employees/import (JSON массив строк) или POST /employees/import/excel (multipart file). Парсер Excel в backend/app/services/import_employees.py.
+- **Рабочие часы и часовые ставки** — таблица `working_hours_year_months` хранит количество рабочих часов для каждого месяца года. Настраивается через страницу **Настройки** (GET/PUT `/settings/working-hours?year=`). `calc_hourly_rate(total, hours)` считает `total / hours`. Дашборд `/dashboard/hourly-rates?year=` агрегирует `overall_monthly_avg` и `by_specialization` (среднее, мин, макс ставка по месяцам). Если часы не настроены — значения `null`, фронт показывает предупреждение с ссылкой на Настройки.
 
 ---
 
@@ -153,7 +156,7 @@ docker compose --profile full up -d --build
 
 ## 6. Тесты и качество
 
-- **Backend:** pytest, в `backend/tests/` (conftest, test_calc, test_models_and_services, test_api_employees, test_api_projects и др.). Запуск из корня backend: `pytest`.
+- **Backend:** pytest, в `backend/tests/` (conftest, test_calc, test_models_and_services, test_api_employees, test_api_projects, test_backup, test_budget_plan, test_import_employees, **test_hourly_rate**, **test_settings_working_hours** и др.). Запуск из корня backend: `pytest`.
 - **Линтеры** — не ухудшать состояние (pylint/flake8 и т.п. по проекту). Проект должен собираться и стартовать (docker compose build/up, frontend build).
 
 ---
@@ -183,18 +186,12 @@ docker compose --profile full up -d --build
 - **Assignments:** POST /assignments, PATCH/DELETE /assignments/:id, PUT /assignments/:id/rates/:year/:month.
 - **Budget projects:** GET/POST /budget-projects, GET/PATCH/DELETE /budget-projects/:id.
 - **Budgets:** POST /budgets/recalculate?year=, GET /budgets/overview, GET /budgets/projects/:id, GET /budgets/budget-projects/:id, GET /budgets/last-calculated и др.
-- **Dashboard:** GET /dashboard/summary, by-project, by-department, by-specialization, movements, available-years.
+- **Dashboard:** GET /dashboard/summary, by-project, by-project-monthly, by-budget-project-monthly, by-department, by-department-monthly, by-specialization, by-specialization-monthly, movements, **hourly-rates**, available-years (все с ?year=).
+- **Settings:** GET /settings/working-hours?year= (рабочие часы 12 месяцев), PUT /settings/working-hours?year= (upsert, тело `{items: [{month, hours}×12]}`).
 - **Exports:** GET /exports/employees, /exports/projects-budget, /exports/budget-projects, /exports/payroll (все с ?year=, ответ blob).
 - **Backup (PostgreSQL):** GET /backup/export (файл `.dump`), POST /backup/restore (multipart `file` + `confirm=true`). UI: **Настройки** `/settings`.
 
 ### Локальные бэкапы БД (Docker)
-Я создал локальные копии текущей БД приложения (том `pgdata`) в директории:
-`/Users/istrich/Service/Res-CRM/db_backups`
-
-Содержимое на момент создания:
-- `pgdump_20260320_140226.backup` — логический дамп через `pg_dump` (можно восстанавливать через `pg_restore`).
-- `pgdata_20260320_140230.tar.gz` — физический архив данных тома PostgreSQL (`/var/lib/postgresql/data`).
-
-Для восстановления физическим образом проще всего откатывать том Docker `res-crm_pgdata` (на macOS это лежит внутри Docker VM).
+Для бэкапа/восстановления используется встроенный UI в **Настройки** (`/settings`): скачать `.dump` (pg_dump -Fc) и восстановить через него же. Файлы `db_backups/` добавлены в `.gitignore` и не хранятся в репозитории.
 
 Использование: при добавлении фич или отладке смотреть соответствующий роутер в `backend/app/routers/` и вызовы в `frontend/src/api/index.js` и на страницах.

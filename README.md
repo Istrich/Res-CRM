@@ -47,9 +47,13 @@ npm run dev
 - Rate limiting: `POST /auth/login` ограничен до `5/minute` на IP (при превышении возвращается `429 Too Many Requests`).
 - `GET /health` делает запрос в БД (`SELECT 1`) и возвращает `503`, если БД недоступна.
 
-### Полный бэкап БД (Настройки)
+### Настройки (`/settings`)
 
-В меню **Настройки** (`/settings`): скачать дамп PostgreSQL (`pg_dump -Fc`) и при необходимости восстановить из того же файла. Восстановление **полностью заменяет** схему `public` в текущей базе. Работает только при `DATABASE_URL` с PostgreSQL; в образ backend добавлен пакет `postgresql-client`. Лимиты API: экспорт `10/min`, восстановление `5/hour` на IP.
+В меню **Настройки** два раздела:
+
+1. **Бэкап/восстановление PostgreSQL** — скачать дамп (`pg_dump -Fc`) и восстановить из него. Восстановление **полностью заменяет** схему `public`. Работает только при `DATABASE_URL` с PostgreSQL; в образ backend добавлен `postgresql-client`. Лимиты API: экспорт `10/min`, восстановление `5/hour` на IP.
+
+2. **Рабочие часы по месяцам** — ввод количества рабочих часов для каждого из 12 месяцев выбранного года (сохраняются в `working_hours_year_months`). Используются для расчёта часовой ставки на вкладке «Часовые ставки» дашборда. Если не настроены — вкладка показывает предупреждение.
 
 Для cookie-аутентификации из другого origin’а важно, чтобы `CORS_ORIGINS` в backend был задан явным origin (не `*`) и чтобы браузер передавал cookie (`withCredentials=true` в axios). В локальной разработке это обычно обходится Vite proxy (одно origin).
 
@@ -78,11 +82,11 @@ Res-CRM/
 │   │   ├── middleware.py      # AccessLogMiddleware (structured access log)
 │   │   ├── types.py           # GUID SQLAlchemy type (PG UUID / SQLite CHAR(36))
 │   │   ├── utils.py           # escape_like() for LIKE/ILIKE safety
-│   │   ├── models/           # ORM: User, BudgetProject, BudgetProjectMonthPlan, Project, Employee, EmployeeProject, AssignmentMonthRate, SalaryRecord, BudgetSnapshot
-│   │   ├── schemas/          # Pydantic (employee, project, assignment, auth)
-│   │   ├── routers/          # auth, employees, projects, budget_projects, assignments, budgets, dashboard, exports, backup
+│   │   ├── models/           # ORM: User, BudgetProject, BudgetProjectMonthPlan, Project, ProjectMonthPlan, Employee, EmployeeProject, AssignmentMonthRate, SalaryRecord, BudgetSnapshot, WorkingHoursYearMonth
+│   │   ├── schemas/          # Pydantic (employee, project, assignment, auth, settings)
+│   │   ├── routers/          # auth, employees, projects, budget_projects, assignments, budgets, dashboard, exports, backup, settings
 │   │   └── services/         # auth.py, calc.py, dashboard_service.py, employees_service.py, budget_plan.py, export.py, import_employees.py
-│   ├── migrations/           # Alembic (0001..0005_budget_project_month_plans)
+│   ├── migrations/           # Alembic (0001..0007_add_indexes)
 │   ├── requirements.txt
 │   └── .env                  # DATABASE_URL, SECRET_KEY, ADMIN_*
 │
@@ -90,7 +94,7 @@ Res-CRM/
 │   └── src/
 │       ├── api/              # client.js (axios, /api, withCredentials cookie `access_token`), index.js (все вызовы API)
 │       ├── components/        # Layout, Modal, Confirm, EmployeeForm, AssignmentManager
-│       ├── pages/             # Login, Dashboard, Employees, EmployeeDetail, Hiring, Projects, ProjectDetail, BudgetProjects, BudgetProjectDetail, Budgets, Settings
+│       ├── pages/             # Login, Dashboard (+HourlyRatesTab), Employees, EmployeeDetail, Hiring, Projects, ProjectDetail, BudgetProjects, BudgetProjectDetail, Budgets, Settings
 │       ├── store/             # auth.js, year.js (Zustand)
 │       └── utils/             # fmt, fmtDate, MONTHS, statusLabel, statusColor, downloadBlob
 │
@@ -116,6 +120,7 @@ Res-CRM/
 | `budget_snapshots` | Кэш расхода по проекту/месяцу (amount, is_forecast) |
 | `project_month_plans` | Собственный помесячный план проекта (project_id, year, month, amount) |
 | `budget_project_month_plans` | Помесячный план бюджета (budget_project_id, year, month, amount) |
+| `working_hours_year_months` | Количество рабочих часов по месяцам (year, month, hours) — для расчёта часовой ставки |
 
 ---
 
@@ -138,7 +143,7 @@ Res-CRM/
 - **Бюджетные проекты:** список за год, карточка, привязка проектов, **помесячный план** (12 полей, «Равномерно», «Сохранить план»), таблица план vs факт по месяцам.
 - **Бюджеты:** пересчёт, сводка, экспорты (проекты, бюджетные, ФОТ).
 - **Проект (карточка):** расходы по месяцам с планом и отклонением (если проект входит в бюджетный проект с помесячным планом).
-- **Дашборд:** сводки по году, по проектам, подразделениям, специализациям, движение персонала.
+- **Дашборд:** сводки по году, по проектам, подразделениям, специализациям, движение персонала, **часовые ставки по специализациям** (средняя/мин/макс по месяцам, bar-chart; требуется настройка рабочих часов).
 
 ---
 
