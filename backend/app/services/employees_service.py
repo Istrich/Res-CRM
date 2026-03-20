@@ -15,7 +15,12 @@ from sqlalchemy.orm import Session
 
 from app.models import AssignmentMonthRate, Employee, EmployeeProject, Project, SalaryRecord
 from app.schemas.employee import AssignmentOut, EmployeeListItem, EmployeeOut, SalaryRecordOut
-from app.services.calc import assignment_active_in_month, get_employee_month_total_rate
+from app.services.calc import (
+    assignment_active_in_month,
+    calc_hourly_rate,
+    get_employee_month_total_rate,
+    get_working_hours_map,
+)
 
 
 def check_assignment_period_within_employment(
@@ -61,6 +66,7 @@ def build_employee_out(
     emp: Employee,
     year: Optional[int] = None,
     db: Optional[Session] = None,
+    hours_map: Optional[dict] = None,
 ) -> EmployeeOut:
     salary_records = [
         SalaryRecordOut.from_orm_with_total(r)
@@ -96,6 +102,18 @@ def build_employee_out(
     else:
         assignments = [build_assignment_out(ep) for ep in emp.employee_projects]
 
+    monthly_hourly_rates: Optional[list[Optional[float]]] = None
+    if year is not None:
+        if hours_map is None and db is not None:
+            hours_map = get_working_hours_map(db, year)
+        if hours_map is not None:
+            by_month_total = {r.month: float(r.total) for r in salary_records if r.year == year}
+            monthly_hourly_rates = [
+                calc_hourly_rate(by_month_total[m], hours_map.get(m, 0.0))
+                if m in by_month_total else None
+                for m in range(1, 13)
+            ]
+
     return EmployeeOut(
         id=emp.id,
         is_position=emp.is_position,
@@ -118,6 +136,7 @@ def build_employee_out(
         created_at=emp.created_at,
         updated_at=emp.updated_at,
         assignments_monthly_total_rates=assignments_monthly_total_rates,
+        monthly_hourly_rates=monthly_hourly_rates,
     )
 
 
@@ -125,6 +144,7 @@ def build_list_item(
     emp: Employee,
     year: Optional[int] = None,
     month: Optional[int] = None,
+    hours_map: Optional[dict] = None,
 ) -> EmployeeListItem:
     if year is not None and month is not None and 1 <= month <= 12:
         active = [ep for ep in emp.employee_projects if assignment_active_in_month(ep, year, month)]
@@ -136,6 +156,7 @@ def build_list_item(
 
     monthly_totals = None
     monthly_is_raise = None
+    monthly_hourly_rates: Optional[list[Optional[float]]] = None
     if year is not None and hasattr(emp, "salary_records") and emp.salary_records is not None:
         by_month = {r.month: float(r.total) for r in emp.salary_records if r.year == year}
         monthly_totals = [by_month.get(m, 0.0) for m in range(1, 13)]
@@ -145,6 +166,12 @@ def build_list_item(
             if r.year == year
         }
         monthly_is_raise = [by_raise.get(m, False) for m in range(1, 13)]
+        if hours_map is not None:
+            monthly_hourly_rates = [
+                calc_hourly_rate(by_month[m], hours_map.get(m, 0.0))
+                if m in by_month else None
+                for m in range(1, 13)
+            ]
     return EmployeeListItem(
         id=emp.id,
         is_position=emp.is_position,
@@ -161,6 +188,7 @@ def build_list_item(
         has_projects=has_projects,
         monthly_totals=monthly_totals,
         monthly_is_raise=monthly_is_raise,
+        monthly_hourly_rates=monthly_hourly_rates,
     )
 
 

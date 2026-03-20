@@ -337,6 +337,7 @@ export default function EmployeesPage() {
               <th className="th">Проекты / Ставки ({MONTHS[month - 1]} {year})</th>
               <th className="th">Найм</th>
               <th className="th">Увольнение</th>
+              <th className="th text-right" style={{ minWidth: 90 }}>Ч/ст ({MONTHS[month - 1]})</th>
               {MONTHS.map((m, i) => (
                 <th className="th" key={i} style={{ minWidth: 70, textAlign: 'right', ...(i === new Date().getMonth() && { background: '#fef9c3' }) }}>{m}</th>
               ))}
@@ -355,6 +356,7 @@ export default function EmployeesPage() {
                 key={emp.id}
                 emp={emp}
                 year={year}
+                month={month}
                 onOpen={() => navigate(`/employees/${emp.id}`)}
                 onDelete={() => setDeleteTarget(emp)}
               />
@@ -423,7 +425,7 @@ export default function EmployeesPage() {
   )
 }
 
-function EmployeeRow({ emp, year, onOpen, onDelete }) {
+function EmployeeRow({ emp, year, month, onOpen, onDelete }) {
   const isTerminated = emp.termination_date && new Date(emp.termination_date) < new Date()
 
   return (
@@ -462,6 +464,11 @@ function EmployeeRow({ emp, year, onOpen, onDelete }) {
               {fmtDate(emp.termination_date)}
             </span>
           : '—'}
+      </td>
+      <td className="td text-right text-small" onClick={onOpen} style={{ minWidth: 90, whiteSpace: 'nowrap' }}>
+        {emp.monthly_hourly_rates?.[month - 1] != null
+          ? <span>{fmt(emp.monthly_hourly_rates[month - 1])} <span className="text-muted" style={{ fontSize: 11 }}>₽/ч</span></span>
+          : <span className="text-muted">—</span>}
       </td>
       {/* Monthly totals (year from context); green = raise month */}
       {MONTHS.map((_, i) => {

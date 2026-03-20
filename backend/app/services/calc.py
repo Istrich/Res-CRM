@@ -35,7 +35,21 @@ from app.models import (
     Project,
     ProjectMonthPlan,
     SalaryRecord,
+    WorkingHoursYearMonth,
 )
+
+
+def get_working_hours_map(db: Session, year: int) -> dict[int, float]:
+    """Return {month: hours} for the year from WorkingHoursYearMonth. Missing months → absent."""
+    rows = db.query(WorkingHoursYearMonth).filter(WorkingHoursYearMonth.year == year).all()
+    return {r.month: float(r.hours) for r in rows}
+
+
+def calc_hourly_rate(total: float, hours: float) -> float | None:
+    """Return total / hours rounded to 2 decimals. Returns None when hours == 0."""
+    if not hours:
+        return None
+    return round(total / hours, 2)
 
 
 def _month_start(year: int, month: int) -> date:

@@ -22,6 +22,33 @@ import SalaryModal from '../components/SalaryModal'
 import AddAssignmentModal from '../components/AddAssignmentModal'
 import { MemberRateCell, EditableDateCell } from '../components/MembersTable'
 
+function empToEditForm(emp) {
+  return {
+    ...emp,
+    first_name: emp.first_name || '',
+    last_name: emp.last_name || '',
+    middle_name: emp.middle_name || '',
+    title: emp.title || '',
+    department: emp.department || '',
+    specialization: emp.specialization || '',
+    comment: emp.comment || '',
+    hire_date: emp.hire_date || '',
+    termination_date: emp.termination_date || '',
+    planned_exit_date: emp.planned_exit_date || '',
+    planned_salary: emp.planned_salary ?? '',
+    position_status: emp.position_status || 'awaiting_assignment',
+  }
+}
+
+function formatSaveError(err) {
+  const d = err?.response?.data?.detail
+  if (Array.isArray(d)) {
+    return d.map((x) => (typeof x?.msg === 'string' ? x.msg : JSON.stringify(x))).join('; ')
+  }
+  if (typeof d === 'string') return d
+  return err?.message || 'Не удалось сохранить'
+}
+
 export default function EmployeeDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -43,27 +70,21 @@ export default function EmployeeDetailPage() {
     queryFn: () => getEmployee(id, { year }),
   })
 
+  // Держим черновик формы в актуальном состоянии с сервером, пока модалка закрыта.
+  // Раньше editForm заполнялся только один раз (!editForm) — после сохранения при повторном
+  // открытии «Редактировать» показывались старые данные (казалось, что сохранение не сработало).
   useEffect(() => {
-    if (emp && !editForm) setEditForm({
-      ...emp,
-      first_name: emp.first_name || '',
-      last_name: emp.last_name || '',
-      middle_name: emp.middle_name || '',
-      title: emp.title || '',
-      department: emp.department || '',
-      specialization: emp.specialization || '',
-      comment: emp.comment || '',
-      hire_date: emp.hire_date || '',
-      termination_date: emp.termination_date || '',
-      planned_exit_date: emp.planned_exit_date || '',
-      planned_salary: emp.planned_salary ?? '',
-      position_status: emp.position_status || 'awaiting_assignment',
-    })
-  }, [emp])
+    if (!emp) return
+    if (editModal) return
+    setEditForm(empToEditForm(emp))
+  }, [emp, editModal])
 
   const updateMut = useMutation({
     mutationFn: (data) => updateEmployee(id, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employee', id] }); setEditModal(false) },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['employee', id] })
+      setEditModal(false)
+    },
   })
 
   const deleteMut = useMutation({
@@ -363,10 +384,19 @@ export default function EmployeeDetailPage() {
                 { key: 'fixed_bonus', label: 'Фикс. надбавка' },
                 { key: 'one_time_bonus', label: 'Разовая премия' },
                 { key: 'total', label: 'Итого', bold: true },
-              ].map(({ key, label, bold }) => (
+                { key: 'hourly_rate', label: 'Ч/ставка, ₽/ч', isHourly: true },
+              ].map(({ key, label, bold, isHourly }) => (
                 <tr key={key}>
                   <td className="td" style={{ fontWeight: bold ? 600 : 400 }}>{label}</td>
                   {MONTHS.map((_, i) => {
+                    if (isHourly) {
+                      const hr = emp.monthly_hourly_rates?.[i]
+                      return (
+                        <td className="td text-right" key={i} style={{ fontWeight: 400, color: 'var(--text-2)' }}>
+                          {hr != null ? fmt(hr) : <span className="text-muted">—</span>}
+                        </td>
+                      )
+                    }
                     const rec = salaryByMonth[i + 1]
                     const val = rec ? rec[key] : null
                     const isRaiseMonth = rec?.is_raise === true
@@ -397,8 +427,8 @@ export default function EmployeeDetailPage() {
                       </td>
                     )
                   })}
-                  <td className="td text-right" style={{ fontWeight: 600 }}>
-                    {fmt(Object.values(salaryByMonth).reduce((s, r) => s + (r[key] || 0), 0))}
+                  <td className="td text-right" style={{ fontWeight: isHourly ? 400 : 600, color: isHourly ? 'var(--text-3)' : undefined }}>
+                    {isHourly ? '—' : fmt(Object.values(salaryByMonth).reduce((s, r) => s + (r[key] || 0), 0))}
                   </td>
                 </tr>
               ))}
@@ -411,12 +441,30 @@ export default function EmployeeDetailPage() {
       {editModal && editForm && (
         <Modal
           title="Редактировать"
-          onClose={() => setEditModal(false)}
+          onClose={() => {
+            updateMut.reset()
+            setEditModal(false)
+          }}
           footer={
-            <button type="button" className="btn btn-secondary" onClick={() => setEditModal(false)}>Отмена</button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                updateMut.reset()
+                setEditModal(false)
+              }}
+            >
+              Отмена
+            </button>
           }
         >
+          {updateMut.isError && (
+            <div className="alert alert-error" style={{ marginBottom: 12 }}>
+              {formatSaveError(updateMut.error)}
+            </div>
+          )}
           <EmployeeForm
+            key={emp.updated_at}
             initial={editForm}
             onSubmit={(payload) => updateMut.mutate(payload)}
             loading={updateMut.isPending}

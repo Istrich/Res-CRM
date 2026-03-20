@@ -34,6 +34,15 @@ npm run dev
 
 - **Frontend (разработка):** http://localhost:3000 (Vite проксирует `/api` на backend).
 
+#### Доступ с другого компьютера в локальной сети (LAN)
+
+1. **Порт:** в `frontend/vite.config.js` задано `port: 3000` и `host: '0.0.0.0'` — с другого ПК открывайте **`http://<IP-сервера>:3000/employees`**, а не `:3001`, если вы не меняли порт вручную (`npm run dev -- --port 3001`).
+2. **На сервере должны работать:** Docker с backend (`docker compose up -d`) и `npm run dev` в `frontend/` — API идёт через прокси Vite на `localhost:8000` на той же машине.
+3. **Проверка с сервера:** `curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/` и с другого ПК: `ping <IP>` затем открыть URL в браузере.
+4. **Firewall (macOS):** «Системные настройки» → «Сеть» / «Защита и безопасность» → разрешить входящие для Node/Vite или временно проверить с отключённым файрволом.
+5. **Роутер:** отключите «изоляцию клиентов Wi‑Fi» (AP/client isolation), если ПК в разных сегментах сети.
+6. **Полный стек в Docker** (`--profile full`): приложение — **`http://<IP>:3000`**, не 3001 (в `docker-compose.yml` проброшен `3000:80`).
+
 ### Весь стек в Docker (автозапуск / прод)
 
 ```bash
@@ -45,6 +54,10 @@ docker compose --profile full up -d --build
 - **Swagger:** http://localhost:8000/docs.
 
 Логин: `admin` / `admin123` (меняется в `backend/.env`: `ADMIN_USERNAME`, `ADMIN_PASSWORD`).
+
+**Если логин/пароль «верные», но пишет неверные:** пароль в PostgreSQL был сохранён при **первом** запуске backend. Смена `ADMIN_PASSWORD` в `.env` **сама по себе не меняет** хеш в таблице `users`. Варианты: (1) в `.env` выставить `ADMIN_SYNC_PASSWORD_FROM_ENV=true`, перезапустить backend, войти, затем вернуть `false`; (2) войти с **тем** паролем, который был при первом старте (часто дефолтный `admin123`); (3) удалить строку пользователя в `users` и перезапустить backend (создастся заново из `.env`).
+
+Даже если вы **не меняли** `.env`, база могла появиться из **старого тома Docker** (`pgdata`) или бэкапа — тогда в `users` другой хеш. Тогда помогает п. (1) или (3). После нескольких неудачных попыток срабатывает лимит **5 запросов/мин** на `/auth/login` — интерфейс покажет отдельное сообщение про «слишком много попыток». В логах backend при 401: `login failed for username=...`.
 
 ### Без Docker (если БД уже есть)
 
@@ -173,5 +186,15 @@ docker compose --profile full up -d --build
 - **Dashboard:** GET /dashboard/summary, by-project, by-department, by-specialization, movements, available-years.
 - **Exports:** GET /exports/employees, /exports/projects-budget, /exports/budget-projects, /exports/payroll (все с ?year=, ответ blob).
 - **Backup (PostgreSQL):** GET /backup/export (файл `.dump`), POST /backup/restore (multipart `file` + `confirm=true`). UI: **Настройки** `/settings`.
+
+### Локальные бэкапы БД (Docker)
+Я создал локальные копии текущей БД приложения (том `pgdata`) в директории:
+`/Users/istrich/Service/Res-CRM/db_backups`
+
+Содержимое на момент создания:
+- `pgdump_20260320_140226.backup` — логический дамп через `pg_dump` (можно восстанавливать через `pg_restore`).
+- `pgdata_20260320_140230.tar.gz` — физический архив данных тома PostgreSQL (`/var/lib/postgresql/data`).
+
+Для восстановления физическим образом проще всего откатывать том Docker `res-crm_pgdata` (на macOS это лежит внутри Docker VM).
 
 Использование: при добавлении фич или отладке смотреть соответствующий роутер в `backend/app/routers/` и вызовы в `frontend/src/api/index.js` и на страницах.

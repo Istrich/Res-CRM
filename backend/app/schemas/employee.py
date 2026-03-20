@@ -197,6 +197,7 @@ class EmployeeOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     assignments_monthly_total_rates: Optional[list[float]] = None  # 12 values when requested with year
+    monthly_hourly_rates: Optional[list[Optional[float]]] = None  # 12 values: ₽/h or None
 
     class Config:
         from_attributes = True
@@ -218,6 +219,7 @@ class EmployeeListItem(BaseModel):
     has_projects: bool
     monthly_totals: Optional[list[float]] = None  # 12 values for the requested year (Jan..Dec)
     monthly_is_raise: Optional[list[bool]] = None  # 12 values: True if that month is marked as raise
+    monthly_hourly_rates: Optional[list[Optional[float]]] = None  # 12 values: ₽/h or None
 
     class Config:
         from_attributes = True

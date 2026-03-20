@@ -6,6 +6,7 @@ const BudgetProjectsTab = lazy(() => import('./dashboard/BudgetProjectsTab'))
 const ProjectsTab = lazy(() => import('./dashboard/ProjectsTab'))
 const DepartmentsTab = lazy(() => import('./dashboard/DepartmentsTab'))
 const SpecializationsTab = lazy(() => import('./dashboard/SpecializationsTab'))
+const HourlyRatesTab = lazy(() => import('./dashboard/HourlyRatesTab'))
 
 const TABS = [
   { id: 'overview', label: '📊 Обзор' },
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'projects', label: '📁 Проекты' },
   { id: 'departments', label: '🏢 Подразделения' },
   { id: 'specializations', label: '🎯 Специализации' },
+  { id: 'hourly-rates', label: '💰 Часовые ставки' },
 ]
 
 function TabSpinner() {
@@ -50,6 +52,7 @@ export default function DashboardPage() {
         {activeTab === 'projects' && <ProjectsTab year={year} />}
         {activeTab === 'departments' && <DepartmentsTab year={year} />}
         {activeTab === 'specializations' && <SpecializationsTab year={year} />}
+        {activeTab === 'hourly-rates' && <HourlyRatesTab year={year} />}
       </Suspense>
     </div>
   )

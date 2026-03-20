@@ -15,7 +15,14 @@ from app.services.budget_plan import (
     get_project_own_month_plan,
     set_project_own_month_plan,
 )
-from app.services.calc import assignment_active_in_month, get_employee_month_total_rate, get_project_budget_summary
+from app.services.calc import (
+    assignment_active_in_month,
+    batch_employee_month_costs,
+    calc_hourly_rate,
+    get_employee_month_total_rate,
+    get_project_budget_summary,
+    get_working_hours_map,
+)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -212,6 +219,13 @@ def get_project_employees(
         for o in overrides:
             year_overrides.setdefault(o.assignment_id, {})[o.month] = float(o.rate)
 
+    employee_ids = [a.employee.id for a in assignments]
+    emp_costs: dict[tuple, float] = {}
+    hours_map: dict[int, float] = {}
+    if year is not None:
+        emp_costs = batch_employee_month_costs(db, employee_ids, year)
+        hours_map = get_working_hours_map(db, year)
+
     result = []
     default_rate_by_asgn = {a.id: float(a.rate) for a in assignments}
     for asgn in assignments:
@@ -238,6 +252,10 @@ def get_project_employees(
             ]
             row["monthly_total_rates"] = [
                 get_employee_month_total_rate(db, emp.id, year, m) for m in range(1, 13)
+            ]
+            row["monthly_hourly_rates"] = [
+                calc_hourly_rate(emp_costs.get((emp.id, m), 0.0), hours_map.get(m, 0.0))
+                for m in range(1, 13)
             ]
         result.append(row)
 

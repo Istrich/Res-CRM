@@ -290,3 +290,20 @@ class BudgetSnapshot(Base):
     calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     project: Mapped["Project"] = relationship("Project", back_populates="budget_snapshots")
+
+
+# ---------------------------------------------------------------------------
+# WorkingHoursYearMonth — working hours per month (for future hourly rate calc)
+# ---------------------------------------------------------------------------
+class WorkingHoursYearMonth(Base):
+    __tablename__ = "working_hours_year_months"
+    __table_args__ = (
+        UniqueConstraint("year", "month", name="uq_working_hours_year_month"),
+        CheckConstraint("month BETWEEN 1 AND 12", name="chk_working_hours_month_1_12"),
+        CheckConstraint("hours >= 0", name="chk_working_hours_hours_non_negative"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    hours: Mapped[float] = mapped_column(Numeric(8, 2), nullable=False, default=0)

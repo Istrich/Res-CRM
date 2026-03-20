@@ -16,7 +16,9 @@ from app.models import (
 from app.services.budget_plan import get_budget_project_month_plan, get_project_month_plan
 from app.services.calc import (
     batch_employee_month_costs,
+    calc_hourly_rate,
     employee_active_in_month,
+    get_working_hours_map,
 )
 
 
@@ -269,6 +271,104 @@ def get_movements(db: Session, year: int) -> list:
         })
 
     return result
+
+
+def get_hourly_rates(db: Session, year: int) -> dict:
+    """Hourly rate analytics: overall monthly avg + per-specialization avg/min/max.
+
+    Uses only exact SalaryRecord rows for the requested year (no fallback),
+    consistent with the employee detail page hourly rate display.
+    Returns null for months where working hours are not configured or no salary data exists.
+    """
+    hours_map = get_working_hours_map(db, year)
+
+    employees = (
+        db.query(Employee)
+        .filter(Employee.is_position == False)  # noqa: E712
+        .all()
+    )
+    employee_ids = [e.id for e in employees]
+
+    if not employee_ids:
+        return {
+            "year": year,
+            "hours_configured": bool(hours_map),
+            "overall_monthly_avg": [None] * 12,
+            "by_specialization": [],
+        }
+
+    salary_records = (
+        db.query(SalaryRecord)
+        .filter(
+            SalaryRecord.employee_id.in_(employee_ids),
+            SalaryRecord.year == year,
+        )
+        .all()
+    )
+
+    # emp_id -> month -> total compensation
+    emp_month_total: dict = {}
+    for rec in salary_records:
+        emp_month_total.setdefault(rec.employee_id, {})[rec.month] = float(
+            rec.salary) + float(rec.kpi_bonus) + float(rec.fixed_bonus) + float(rec.one_time_bonus)
+
+    # Collect hourly rates per specialization and overall
+    DEFAULT_SPEC = "Без специализации"
+    spec_monthly_rates: dict[str, dict[int, list[float]]] = {}
+    overall_monthly_rates: dict[int, list[float]] = {m: [] for m in range(1, 13)}
+
+    for emp in employees:
+        spec = emp.specialization or DEFAULT_SPEC
+        if spec not in spec_monthly_rates:
+            spec_monthly_rates[spec] = {m: [] for m in range(1, 13)}
+
+        month_totals = emp_month_total.get(emp.id, {})
+        for month in range(1, 13):
+            if month not in month_totals:
+                continue
+            if not employee_active_in_month(emp, year, month):
+                continue
+            rate = calc_hourly_rate(month_totals[month], hours_map.get(month, 0.0))
+            if rate is None:
+                continue
+            spec_monthly_rates[spec][month].append(rate)
+            overall_monthly_rates[month].append(rate)
+
+    def _avg(rates: list[float]) -> float | None:
+        return round(sum(rates) / len(rates), 2) if rates else None
+
+    overall_monthly_avg = [
+        _avg(overall_monthly_rates[m]) for m in range(1, 13)
+    ]
+
+    by_specialization = []
+    for spec, month_rates in spec_monthly_rates.items():
+        if not any(month_rates[m] for m in range(1, 13)):
+            continue
+        employees_with_data = sum(
+            1 for emp in employees
+            if (emp.specialization or DEFAULT_SPEC) == spec
+            and emp_month_total.get(emp.id)
+        )
+        by_specialization.append({
+            "specialization": spec,
+            "monthly_avg": [_avg(month_rates[m]) for m in range(1, 13)],
+            "monthly_min": [round(min(month_rates[m]), 2) if month_rates[m] else None for m in range(1, 13)],
+            "monthly_max": [round(max(month_rates[m]), 2) if month_rates[m] else None for m in range(1, 13)],
+            "employees_count": employees_with_data,
+        })
+
+    by_specialization.sort(
+        key=lambda x: sum(1 for v in x["monthly_avg"] if v is not None),
+        reverse=True,
+    )
+
+    return {
+        "year": year,
+        "hours_configured": bool(hours_map),
+        "overall_monthly_avg": overall_monthly_avg,
+        "by_specialization": by_specialization,
+    }
 
 
 def get_available_years(db: Session) -> dict:

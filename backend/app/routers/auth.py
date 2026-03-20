@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -12,6 +14,8 @@ from app.services.auth import authenticate_user, create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+logger = logging.getLogger(__name__)
+
 _COOKIE_NAME = "access_token"
 _limiter = Limiter(key_func=get_remote_address)
 
@@ -21,6 +25,7 @@ _limiter = Limiter(key_func=get_remote_address)
 def login(request: Request, body: LoginRequest, response: Response, db: Session = Depends(get_db)):
     user = authenticate_user(db, body.username, body.password)
     if not user:
+        logger.warning("login failed for username=%r (wrong user or password)", body.username)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     token = create_access_token({"sub": user.username})
 

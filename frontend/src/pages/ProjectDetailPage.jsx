@@ -319,6 +319,40 @@ export default function ProjectDetailPage() {
         />
       </div>
 
+      {/* Hourly rates per member per month */}
+      {year != null && members.length > 0 && members[0]?.monthly_hourly_rates && (
+        <div className="card" style={{ padding: '16px 20px', marginTop: 20 }}>
+          <div className="fw-600" style={{ marginBottom: 12 }}>Часовые ставки участников (₽/ч) — {year}</div>
+          <div className="text-muted text-small" style={{ marginBottom: 10 }}>
+            Данные отображаются, если в «Настройках» указаны рабочие часы для этого года.
+          </div>
+          <div className="overflow-table">
+            <table>
+              <thead>
+                <tr>
+                  <th className="th">Сотрудник / Позиция</th>
+                  {MONTHS.map((m, i) => (
+                    <th className="th text-right" key={i} style={{ minWidth: 64, ...(i === new Date().getMonth() && { background: '#fef9c3' }) }}>{m}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {members.map(member => (
+                  <tr key={member.assignment_id}>
+                    <td className="td fw-500">{member.display_name}</td>
+                    {(member.monthly_hourly_rates || Array(12).fill(null)).map((hr, i) => (
+                      <td className="td text-right text-small" key={i}>
+                        {hr != null ? fmt(hr) : <span className="text-muted">—</span>}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {editModal && editForm && (
         <Modal title="Редактировать проект" onClose={() => setEditModal(false)}
           footer={

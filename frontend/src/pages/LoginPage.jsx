@@ -4,6 +4,20 @@ import { useMutation } from '@tanstack/react-query'
 import { login } from '../api'
 import { useAuthStore } from '../store/auth'
 
+function loginErrorText(err) {
+  const status = err?.response?.status
+  if (status === 429) {
+    return 'Слишком много попыток входа. Подождите около минуты и попробуйте снова.'
+  }
+  if (status === 401) {
+    return 'Неверный логин или пароль'
+  }
+  if (!err?.response) {
+    return 'Не удалось связаться с сервером. Убедитесь, что backend запущен (порт 8000) и откройте сайт с того же хоста, что и API.'
+  }
+  return 'Ошибка входа. Попробуйте снова.'
+}
+
 export default function LoginPage() {
   const navigate = useNavigate()
   const setAuthenticated = useAuthStore((s) => s.setAuthenticated)
@@ -30,8 +44,8 @@ export default function LoginPage() {
           <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 4 }}>Управление персоналом</div>
         </div>
 
-        {mut.error && (
-          <div className="alert alert-error">Неверный логин или пароль</div>
+        {mut.isError && (
+          <div className="alert alert-error">{loginErrorText(mut.error)}</div>
         )}
 
         <form onSubmit={(e) => { e.preventDefault(); mut.mutate() }}>

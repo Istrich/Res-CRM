@@ -52,4 +52,12 @@ def get_or_create_admin(db: Session) -> User:
         db.add(user)
         db.commit()
         db.refresh(user)
+        return user
+
+    if settings.ADMIN_SYNC_PASSWORD_FROM_ENV:
+        user.password_hash = hash_password(settings.ADMIN_PASSWORD)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
     return user

@@ -1,6 +1,8 @@
-import { useRef, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { downloadFullBackup, restoreFullBackup } from '../api'
+import { useEffect, useRef, useState } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { downloadFullBackup, restoreFullBackup, getWorkingHours, putWorkingHours } from '../api'
+import { useYearStore } from '../store/year'
+import { MONTHS } from '../utils'
 
 function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob)
@@ -12,9 +14,34 @@ function triggerDownload(blob, filename) {
 }
 
 export default function SettingsPage() {
+  const { year } = useYearStore()
   const fileInputRef = useRef(null)
   const [file, setFile] = useState(null)
   const [feedback, setFeedback] = useState(null) // { type: 'success'|'error'|'warning', text }
+  const [hoursDraft, setHoursDraft] = useState(Array(12).fill('0'))
+
+  const workingHoursQuery = useQuery({
+    queryKey: ['working-hours', year],
+    queryFn: () => getWorkingHours(year),
+  })
+
+  useEffect(() => {
+    if (!workingHoursQuery.data?.items) return
+    setHoursDraft(workingHoursQuery.data.items.map((it) => String(it.hours)))
+  }, [workingHoursQuery.data, year])
+
+  const putWorkingHoursMutation = useMutation({
+    mutationFn: (items) => putWorkingHours(year, items),
+    onSuccess: (data) => {
+      setFeedback({ type: 'success', text: data?.detail || 'Рабочие часы сохранены.' })
+      if (data?.items) setHoursDraft(data.items.map((it) => String(it.hours)))
+    },
+    onError: (err) => {
+      const d = err.response?.data
+      const text = typeof d?.detail === 'string' ? d.detail : 'Не удалось сохранить рабочие часы'
+      setFeedback({ type: 'error', text })
+    },
+  })
 
   const backupMutation = useMutation({
     mutationFn: downloadFullBackup,
@@ -66,6 +93,23 @@ export default function SettingsPage() {
     )
     if (!ok) return
     restoreMutation.mutate(file)
+  }
+
+  function handleSaveWorkingHours() {
+    const items = hoursDraft.map((v, idx) => {
+      const s = String(v ?? '').trim().replace(',', '.')
+      const num = s === '' ? 0 : Number(s)
+      if (Number.isNaN(num)) return null
+      return { month: idx + 1, hours: num }
+    })
+
+    if (items.some((x) => x === null)) {
+      setFeedback({ type: 'warning', text: 'Проверьте числовые значения рабочих часов.' })
+      return
+    }
+
+    setFeedback(null)
+    putWorkingHoursMutation.mutate(items)
   }
 
   return (
@@ -167,6 +211,85 @@ export default function SettingsPage() {
               )}
             </button>
           </div>
+        </section>
+
+        <div className="divider" style={{ margin: '22px 0' }} />
+
+        <section>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+            <div className="fw-600" style={{ fontSize: 14 }}>Рабочие часы по месяцам</div>
+            <span className="badge badge-gray">Год: {year}</span>
+          </div>
+          <p className="text-muted text-small" style={{ marginBottom: 14, lineHeight: 1.45 }}>
+            Введите количество рабочих часов в каждом месяце выбранного года (для будущего расчёта часовой ставки).
+          </p>
+
+          {workingHoursQuery.isLoading ? (
+            <div style={{ padding: '10px 0', textAlign: 'center' }}>
+              <span className="spinner" />
+            </div>
+          ) : (
+            <>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                  gap: 12,
+                  marginBottom: 16,
+                }}
+              >
+                {MONTHS.map((m, i) => (
+                  <div className="form-group" key={m}>
+                    <label className="label">{m}</label>
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      value={hoursDraft[i] ?? '0'}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setHoursDraft((prev) => {
+                          const next = [...prev]
+                          next[i] = v
+                          return next
+                        })
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={putWorkingHoursMutation.isPending || workingHoursQuery.isLoading}
+                  onClick={() => {
+                    if (workingHoursQuery.data?.items) {
+                      setHoursDraft(workingHoursQuery.data.items.map((it) => String(it.hours)))
+                    }
+                  }}
+                >
+                  Сбросить
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={putWorkingHoursMutation.isPending || workingHoursQuery.isLoading}
+                  onClick={handleSaveWorkingHours}
+                >
+                  {putWorkingHoursMutation.isPending ? (
+                    <>
+                      <span className="spinner" style={{ width: 16, height: 16 }} /> Сохранение…
+                    </>
+                  ) : (
+                    'Сохранить часы'
+                  )}
+                </button>
+              </div>
+            </>
+          )}
         </section>
       </div>
     </div>

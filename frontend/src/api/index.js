@@ -80,7 +80,14 @@ export const getDashboardByDepartmentMonthly = (year) => api.get('/dashboard/by-
 export const getDashboardBySpec = (year) => api.get('/dashboard/by-specialization', { params: { year } }).then(r => r.data)
 export const getDashboardBySpecMonthly = (year) => api.get('/dashboard/by-specialization-monthly', { params: { year } }).then(r => r.data)
 export const getMovements = (year) => api.get('/dashboard/movements', { params: { year } }).then(r => r.data)
+export const getDashboardHourlyRates = (year) => api.get('/dashboard/hourly-rates', { params: { year } }).then(r => r.data)
 export const getAvailableYears = () => api.get('/dashboard/available-years').then(r => r.data)
+
+// Settings
+export const getWorkingHours = (year) =>
+  api.get('/settings/working-hours', { params: { year } }).then(r => r.data)
+export const putWorkingHours = (year, items) =>
+  api.put('/settings/working-hours', { items }, { params: { year } }).then(r => r.data)
 
 // Exports
 export const exportEmployees = (year) => api.get('/exports/employees', { params: { year }, responseType: 'blob' }).then(r => r.data)

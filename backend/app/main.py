@@ -25,6 +25,7 @@ from app.routers import (
     employees,
     exports,
     projects,
+    settings as settings_router,
 )
 from app.services.auth import get_or_create_admin
 
@@ -110,6 +111,7 @@ app.include_router(budgets.router)
 app.include_router(dashboard.router)
 app.include_router(exports.router)
 app.include_router(backup.router)
+app.include_router(settings_router.router)
 
 
 # ---------------------------------------------------------------------------
@@ -118,13 +120,18 @@ app.include_router(backup.router)
 
 @app.get("/health", tags=["health"])
 def health(db=None):
-    from app.database import get_db as _get_db
-    import contextlib
-    db_status = "unavailable"
-    with contextlib.suppress(Exception):
-        db_session = next(_get_db())
+    # Important: `get_db()` is a generator-based dependency. Calling `next(get_db())`
+    # without closing the generator may leak sessions/connections and exhaust the SQLAlchemy pool.
+    # For healthcheck we do an explicit SessionLocal lifecycle instead.
+    db_session = None
+    try:
+        from app.database import SessionLocal as _SessionLocal
+
+        db_session = _SessionLocal()
         db_session.execute(text("SELECT 1"))
-        db_status = "connected"
-    if db_status == "unavailable":
+        return {"status": "ok", "db": "connected"}
+    except Exception:
         return JSONResponse({"status": "degraded", "db": "unavailable"}, status_code=503)
-    return {"status": "ok", "db": db_status}
+    finally:
+        if db_session is not None:
+            db_session.close()

@@ -23,7 +23,7 @@ from app.schemas.employee import (
     SalaryRecordOut,
     SalaryRecordUpsert,
 )
-from app.services.calc import maybe_recalculate_year_background
+from app.services.calc import get_working_hours_map, maybe_recalculate_year_background
 from app.services.employees_service import (
     build_employee_out,
     build_list_item,
@@ -81,7 +81,8 @@ def list_employees(
         q = q.join(Employee.employee_projects).filter(EmployeeProject.project_id == project_id)
 
     employees = q.order_by(Employee.last_name, Employee.first_name).all()
-    return [build_list_item(e, year, month) for e in employees]
+    hours_map = get_working_hours_map(db, year) if year else {}
+    return [build_list_item(e, year, month, hours_map=hours_map) for e in employees]
 
 
 @router.post("/import")

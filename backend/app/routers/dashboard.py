@@ -90,6 +90,15 @@ def movements(
     return dashboard_service.get_movements(db, year)
 
 
+@router.get("/hourly-rates")
+def hourly_rates(
+    year: int = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    return dashboard_service.get_hourly_rates(db, year)
+
+
 @router.get("/available-years")
 def available_years(
     db: Session = Depends(get_db),
