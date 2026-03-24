@@ -110,3 +110,98 @@ export function restoreFullBackup(file) {
   form.append('confirm', 'true')
   return api.post('/backup/restore', form).then((res) => res.data)
 }
+
+// ===========================================================================
+// Staffing
+// ===========================================================================
+
+// Contractors
+export const getContractors = () => api.get('/staffing/contractors').then(r => r.data)
+export const getContractor = (id) => api.get(`/staffing/contractors/${id}`).then(r => r.data)
+export const createContractor = (data) => api.post('/staffing/contractors', data).then(r => r.data)
+export const updateContractor = (id, data) => api.patch(`/staffing/contractors/${id}`, data).then(r => r.data)
+export const deleteContractor = (id) => api.delete(`/staffing/contractors/${id}`)
+
+export const getContractorDocuments = (id) =>
+  api.get(`/staffing/contractors/${id}/documents`).then(r => r.data)
+export const uploadContractorDocument = (id, file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return api.post(`/staffing/contractors/${id}/documents`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then(r => r.data)
+}
+export const deleteContractorDocument = (contractorId, docId) =>
+  api.delete(`/staffing/contractors/${contractorId}/documents/${docId}`)
+export const contractorDocumentDownloadUrl = (contractorId, docId) =>
+  `/api/staffing/contractors/${contractorId}/documents/${docId}/download`
+
+// Staffers
+export const getStaffers = (params) => api.get('/staffing/staffers', { params }).then(r => r.data)
+export const getStaffer = (id) => api.get(`/staffing/staffers/${id}`).then(r => r.data)
+export const createStaffer = (data) => api.post('/staffing/staffers', data).then(r => r.data)
+export const updateStaffer = (id, data) => api.patch(`/staffing/staffers/${id}`, data).then(r => r.data)
+export const deleteStaffer = (id) => api.delete(`/staffing/staffers/${id}`)
+
+// Expenses
+export const getStaffingExpenses = (params) =>
+  api.get('/staffing/expenses', { params }).then(r => r.data)
+export const upsertStaffingExpense = (projectId, year, month, data) =>
+  api.put(`/staffing/expenses/${projectId}/${year}/${month}`, data).then(r => r.data)
+export const getStaffingExpensesSummary = (year) =>
+  api.get('/staffing/expenses/summary', { params: { year } }).then(r => r.data)
+
+export const uploadStaffingInvoice = (expenseId, file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return api.post(`/staffing/expenses/${expenseId}/invoices`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then(r => r.data)
+}
+export const getStaffingInvoices = (expenseId) =>
+  api.get(`/staffing/expenses/${expenseId}/invoices`).then(r => r.data)
+export const invoiceDownloadUrl = (invoiceId) => `/api/staffing/invoices/${invoiceId}/download`
+export const deleteStaffingInvoice = (invoiceId) =>
+  api.delete(`/staffing/invoices/${invoiceId}`)
+
+// Staffer Expense Matrix
+export const getStafferMatrix = (year, params = {}) =>
+  api.get('/staffing/staffer-matrix', { params: { year, ...params } }).then(r => r.data)
+export const upsertStafferExpense = (stafferId, year, month, data) =>
+  api.put(`/staffing/staffer-expenses/${stafferId}/${year}/${month}`, data).then(r => r.data)
+export const uploadStafferInvoiceFile = (expenseId, file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return api.post(`/staffing/staffer-expenses/${expenseId}/invoice-files`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then(r => r.data)
+}
+export const deleteStafferInvoiceFile = (fileId) =>
+  api.delete(`/staffing/staffer-invoice-files/${fileId}`)
+export const stafferInvoiceFileDownloadUrl = (fileId) =>
+  `/api/staffing/staffer-invoice-files/${fileId}/download`
+
+// Batch pre-fill planned hours + amounts from working calendar
+export const prefillStafferPlan = (year) =>
+  api.post('/staffing/staffer-matrix/prefill-plan', null, { params: { year } }).then(r => r.data)
+
+// Staffer month rates
+export const getStafferMonthRates = (stafferId, year) =>
+  api.get(`/staffing/staffers/${stafferId}/month-rates`, { params: { year } }).then(r => r.data)
+export const upsertStafferMonthRate = (stafferId, year, month, data) =>
+  api.put(`/staffing/staffers/${stafferId}/month-rates/${year}/${month}`, data).then(r => r.data)
+export const deleteStafferMonthRate = (stafferId, year, month) =>
+  api.delete(`/staffing/staffers/${stafferId}/month-rates/${year}/${month}`)
+
+// Budgets
+export const getStaffingBudgets = (year) =>
+  api.get('/staffing/budgets', { params: year ? { year } : {} }).then(r => r.data)
+export const getStaffingBudget = (id) => api.get(`/staffing/budgets/${id}`).then(r => r.data)
+export const createStaffingBudget = (data) => api.post('/staffing/budgets', data).then(r => r.data)
+export const updateStaffingBudget = (id, data) =>
+  api.patch(`/staffing/budgets/${id}`, data).then(r => r.data)
+export const deleteStaffingBudget = (id) => api.delete(`/staffing/budgets/${id}`)
+export const getStaffingBudgetMonthPlan = (id, year) =>
+  api.get(`/staffing/budgets/${id}/month-plan`, { params: { year } }).then(r => r.data)
+export const putStaffingBudgetMonthPlan = (id, year, items) =>
+  api.put(`/staffing/budgets/${id}/month-plan`, { year, items }).then(r => r.data)

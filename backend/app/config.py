@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "*"  # In production set to allowed origins, e.g. "https://app.example.com"
     # Set to False in local dev (HTTP). In production (HTTPS) leave True.
     COOKIE_SECURE: bool = False
+    STAFFING_UPLOADS_DIR: str = "staffing_uploads"
 
     class Config:
         env_file = ".env"

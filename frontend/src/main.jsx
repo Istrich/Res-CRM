@@ -17,6 +17,11 @@ import BudgetsPage from './pages/BudgetsPage'
 import SettingsPage from './pages/SettingsPage'
 import DashboardPage from './pages/DashboardPage'
 import HiringPage from './pages/HiringPage'
+import StaffingPage from './pages/staffing/StaffingPage'
+import StafferDetailPage from './pages/staffing/StafferDetailPage'
+import ContractorDetailPage from './pages/staffing/ContractorDetailPage'
+import StaffingBudgetDetail from './pages/staffing/StaffingBudgetDetail'
+import JiraUtilizationPage from './pages/JiraUtilizationPage'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -52,6 +57,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <Route path="budget-projects" element={<BudgetProjectsPage />} />
             <Route path="budget-projects/:id" element={<BudgetProjectDetailPage />} />
             <Route path="budgets" element={<BudgetsPage />} />
+            <Route path="staffing" element={<StaffingPage />} />
+            <Route path="staffing/staffers/:id" element={<StafferDetailPage />} />
+            <Route path="staffing/contractors/:id" element={<ContractorDetailPage />} />
+            <Route path="staffing/budgets/:id" element={<StaffingBudgetDetail />} />
+            <Route path="jira-utilization" element={<JiraUtilizationPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>

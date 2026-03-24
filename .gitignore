@@ -50,5 +50,8 @@ pgdata/
 # DB backups
 db_backups/
 
+# Staffing uploads (contracts, invoices)
+staffing_uploads/
+
 # Logs
 *.log
