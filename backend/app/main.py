@@ -26,6 +26,7 @@ from app.routers import (
     exports,
     projects,
     settings as settings_router,
+    staffing,
 )
 from app.services.auth import get_or_create_admin
 
@@ -112,6 +113,7 @@ app.include_router(dashboard.router)
 app.include_router(exports.router)
 app.include_router(backup.router)
 app.include_router(settings_router.router)
+app.include_router(staffing.router)
 
 
 # ---------------------------------------------------------------------------

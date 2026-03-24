@@ -27,6 +27,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - staffing_uploads_data:/app/staffing_uploads
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
@@ -35,10 +36,8 @@ services:
       retries: 3
       start_period: 10s
 
-  # UI + nginx proxy /api → backend. Включение: docker compose --profile full up -d
-  # Открыть приложение: http://localhost:3000
+  # UI + nginx proxy /api → backend. Открыть приложение: http://localhost:3000
   frontend:
-    profiles: [full]
     build: ./frontend
     restart: unless-stopped
     ports:
@@ -49,3 +48,4 @@ services:
 
 volumes:
   pgdata:
+  staffing_uploads_data:

@@ -13,6 +13,7 @@
 - **Вознаграждение** — по месяцам: оклад, KPI, фикс. надбавка, разовая премия; флаг «Повышение» (подсветка месяца в таблицах).
 - **Бюджеты** — бюджетные проекты (год, сумма), пересчёт расходов по проектам, снапшоты по месяцам, статусы ok/warning/overrun, экспорты в Excel.
 - **Один пользователь** — JWT хранится в `HttpOnly` cookie `access_token`, один логин/пароль (admin). Роли не реализованы.
+- **Стаффинг** — модуль учёта внешних подрядчиков (contractors), стафферов, расходов план/факт по проектам и бюджетов стаффинга. Загрузка договоров и счетов PDF/DOCX (до 50 МБ), хранение на диске в `staffing_uploads/` с Docker volume `staffing_uploads_data`.
 
 Стек: **Backend** — Python 3.11, FastAPI, SQLAlchemy 2, Pydantic, Alembic, PostgreSQL, slowapi. **Frontend** — React 18, Vite 6, React Router, TanStack Query v5, Zustand, Axios.
 
@@ -97,10 +98,10 @@ docker compose --profile full up -d --build
 |------|------------|
 | `main.jsx` | Роуты (React Router), RequireAuth, QueryClientProvider, Layout как обёртка для авторизованных страниц |
 | `api/client.js` | Axios instance `baseURL: '/api'`, `withCredentials=true` (cookie `access_token`), 401 → редирект на /login |
-| `api/index.js` | Все вызовы API (auth, employees, salary, projects, assignments, budget-projects, budgets, dashboard, exports, backup, **settings**) |
+| `api/index.js` | Все вызовы API (auth, employees, salary, projects, assignments, budget-projects, budgets, dashboard, exports, backup, **settings**, **staffing**) |
 | `store/auth.js` | Zustand: флаг `isAuthenticated` (в `sessionStorage`), login/logout |
 | `store/year.js` | Zustand: year (выбор года в сайдбаре) |
-| `components/layout/Layout.jsx` | Сайдбар: логотип, выбор года, навигация (Дашборд, Сотрудники, Найм, Проекты, Бюджетные проекты, Бюджеты), выход |
+| `components/layout/Layout.jsx` | Сайдбар: логотип, выбор года, навигация (Дашборд, Сотрудники, Найм, Проекты, Бюджетные проекты, Бюджеты, **Стаффинг**), выход |
 | `components/ui/Modal.jsx` | Модальное окно (title, onClose, footer, children) |
 | `components/ui/Confirm.jsx` | Подтверждение (message, onConfirm, onCancel, loading), кнопки type="button" |
 | `components/EmployeeForm.jsx` | Форма сотрудника/позиции (используется на странице сотрудников и в карточке) |
@@ -118,11 +119,19 @@ docker compose --profile full up -d --build
 | `pages/BudgetProjectDetailPage.jsx` | Карточка бюджетного проекта, редактирование, удаление |
 | `pages/BudgetsPage.jsx` | Пересчёт, сводка, экспорты (проекты, бюджетные, ФОТ) |
 | `pages/SettingsPage.jsx` | Настройки: бэкап/восстановление PostgreSQL, **редактирование рабочих часов по месяцам для расчёта часовой ставки** |
+| `pages/staffing/StaffingPage.jsx` | Модуль стаффинга: хост вкладок (Стафферы / Расходы / Бюджеты / Подрядчики) |
+| `pages/staffing/StaffersTab.jsx` | Список стафферов, создание (модалка), удаление |
+| `pages/staffing/StafferDetailPage.jsx` | Карточка стаффера: редактирование, удаление |
+| `pages/staffing/ContractorsTab.jsx` | Список подрядчиков, создание, удаление |
+| `pages/staffing/ContractorDetailPage.jsx` | Карточка подрядчика: переименование, загрузка/скачивание/удаление файлов договоров |
+| `pages/staffing/ExpensesTab.jsx` | Таблица расходов 12 месяцев × (план₽ / факт₽ / план ч. / факт ч.), загрузка счетов PDF |
+| `pages/staffing/StaffingBudgetsTab.jsx` | Список бюджетов стаффинга с plan/fact/delta |
+| `pages/staffing/StaffingBudgetDetail.jsx` | Карточка бюджета: помесячный план (редактируемый), факт/дельта |
 | `utils/index.js` | fmt, fmtDate, MONTHS, statusLabel, statusColor, downloadBlob |
 
 ### Конфигурация
 
-- **docker-compose.yml** — сервисы `db` (PostgreSQL 16), `backend` (build ./backend, порт 8000, volume ./backend, uvicorn --reload). Сеть по умолчанию, без host network.
+- **docker-compose.yml** — сервисы `db` (PostgreSQL 16), `backend` (build ./backend, порт 8000, volume ./backend, volume `staffing_uploads_data:/app/staffing_uploads`, uvicorn --reload). Сеть по умолчанию, без host network.
 - **frontend/vite.config.js** — port 3000, proxy `/api` → `http://localhost:8000` с rewrite на `/`.
 - **backend/.env** — обязательны DATABASE_URL, SECRET_KEY, опционально ADMIN_USERNAME, ADMIN_PASSWORD и др. (см. config.py).
 
@@ -140,6 +149,7 @@ docker compose --profile full up -d --build
 - **Пересчёт бюджетов** — POST /budgets/recalculate?year=, дальше чтение через GET /budgets/overview, GET /budgets/projects/:id и т.д.
 - **Импорт сотрудников** — POST /employees/import (JSON массив строк) или POST /employees/import/excel (multipart file). Парсер Excel в backend/app/services/import_employees.py.
 - **Рабочие часы и часовые ставки** — таблица `working_hours_year_months` хранит количество рабочих часов для каждого месяца года. Настраивается через страницу **Настройки** (GET/PUT `/settings/working-hours?year=`). `calc_hourly_rate(total, hours)` считает `total / hours`. Дашборд `/dashboard/hourly-rates?year=` агрегирует `overall_monthly_avg` и `by_specialization` (среднее, мин, макс ставка по месяцам). Если часы не настроены — значения `null`, фронт показывает предупреждение с ссылкой на Настройки.
+- **Стаффинг** — `GET /staffing/staffers`, `POST /staffing/staffers`, `GET/PATCH/DELETE /staffing/staffers/{id}`; contractors аналогично + documents (multipart upload/download); `GET /staffing/expenses?year=&project_id=`, `PUT /staffing/expenses/{project_id}/{year}/{month}`, `GET /staffing/expenses/summary?year=`; invoices upload/download/delete; budgets CRUD + month-plan upsert. Файлы хранятся в `staffing_uploads/` (Docker volume). Лимит файла: 50 МБ.
 
 ---
 

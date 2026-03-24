@@ -7,4 +7,5 @@ from app.routers import (
     employees,
     exports,
     projects,
+    staffing,
 )
