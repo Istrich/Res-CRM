@@ -11,7 +11,6 @@ const NAV = [
   { to: '/hiring', icon: '📋', label: 'Найм' },
   { to: '/projects', icon: '📁', label: 'Проекты' },
   { to: '/budget-projects', icon: '💼', label: 'Бюджетные проекты' },
-  { to: '/budgets', icon: '💰', label: 'Бюджеты' },
   { to: '/staffing', icon: '🤝', label: 'Стаффинг' },
   { to: '/jira-utilization', icon: '⏱', label: 'Утилизация Jira' },
   { to: '/settings', icon: '⚙️', label: 'Настройки' },
