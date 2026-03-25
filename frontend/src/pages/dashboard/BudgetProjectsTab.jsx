@@ -12,15 +12,6 @@ import { COLORS, Section, CustomTooltip, EmptyState } from './shared'
 function BudgetProjectsPlanFact({ data, navigate }) {
   const [showChart, setShowChart] = useState(false)
 
-  const chartData = MONTHS.map((month, i) => {
-    const entry = { month }
-    data.forEach(bp => {
-      entry[bp.budget_project_name + '_plan'] = bp.monthly_plan[i]
-      entry[bp.budget_project_name + '_fact'] = bp.monthly_fact[i]
-    })
-    return entry
-  })
-
   if (data.length === 0) return <EmptyState />
 
   return (
@@ -35,10 +26,16 @@ function BudgetProjectsPlanFact({ data, navigate }) {
       {showChart ? (
         <div>
           {data.slice(0, 5).map((bp, bpIdx) => {
+            const monthlyFact = Array.isArray(bp.monthly_fact)
+              ? bp.monthly_fact
+              : Array(12).fill(0)
+            const monthlyPlan = Array.isArray(bp.monthly_plan)
+              ? bp.monthly_plan
+              : Array(12).fill(0)
             const chartRows = MONTHS.map((month, i) => ({
               month,
-              'План': bp.monthly_plan[i],
-              'Факт': bp.monthly_fact[i],
+              'План': monthlyPlan[i] ?? 0,
+              'Факт': monthlyFact[i] ?? 0,
             }))
             return (
               <div key={bp.budget_project_id} style={{ marginBottom: 28 }}>
@@ -67,7 +64,14 @@ function BudgetProjectsPlanFact({ data, navigate }) {
         </div>
       ) : (
         <div>
-          {data.map((bp, bpIdx) => (
+          {data.map((bp, bpIdx) => {
+            const monthlyFact = Array.isArray(bp.monthly_fact)
+              ? bp.monthly_fact
+              : Array(12).fill(0)
+            const monthlyPlan = Array.isArray(bp.monthly_plan)
+              ? bp.monthly_plan
+              : Array(12).fill(0)
+            return (
             <div key={bp.budget_project_id} style={{ marginBottom: 20 }}>
               <div
                 style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, cursor: 'pointer', padding: '6px 0' }}
@@ -95,25 +99,28 @@ function BudgetProjectsPlanFact({ data, navigate }) {
                   <tbody>
                     <tr>
                       <td className="td text-small fw-500" style={{ color: 'var(--accent)' }}>План</td>
-                      {bp.monthly_plan.map((v, i) => (
+                      {monthlyPlan.map((v, i) => (
                         <td className="td text-right" key={i} style={{ fontSize: 11, color: 'var(--accent)', ...(i === new Date().getMonth() && { background: '#fef9c3' }) }}>{v > 0 ? fmt(v) : '—'}</td>
                       ))}
                       <td className="td text-right fw-600" style={{ color: 'var(--accent)', fontSize: 12 }}>{fmt(bp.total_plan)}</td>
                     </tr>
                     <tr>
-                      <td className="td text-small fw-500">Факт</td>
-                      {bp.monthly_fact.map((v, i) => (
+                      <td className="td text-small fw-500">Факт / прогноз</td>
+                      {monthlyFact.map((v, i) => (
                         <td className="td text-right" key={i} style={{ fontSize: 11, ...(i === new Date().getMonth() && { background: '#fef9c3' }) }}>{v > 0 ? fmt(v) : '—'}</td>
                       ))}
                       <td className="td text-right fw-600" style={{ fontSize: 12 }}>{fmt(bp.total_fact)}</td>
                     </tr>
                     <tr style={{ background: 'var(--surface2)' }}>
                       <td className="td text-small fw-500 text-muted">Откл.</td>
-                      {bp.monthly_diff.map((v, i) => (
-                        <td className="td text-right" key={i} style={{ fontSize: 11, color: v > 0 ? 'var(--red)' : v < 0 ? 'var(--green)' : 'var(--text-3)', ...(i === new Date().getMonth() && { background: 'var(--border-light)' }) }}>
-                          {Math.abs(v) > 0 ? `${v > 0 ? '+' : ''}${fmt(v)}` : '—'}
-                        </td>
-                      ))}
+                      {monthlyFact.map((fact, i) => {
+                        const diff = fact - (monthlyPlan[i] || 0)
+                        return (
+                          <td className="td text-right" key={i} style={{ fontSize: 11, color: diff > 0 ? 'var(--red)' : diff < 0 ? 'var(--green)' : 'var(--text-3)', ...(i === new Date().getMonth() && { background: 'var(--border-light)' }) }}>
+                            {Math.abs(diff) > 0 ? `${diff > 0 ? '+' : ''}${fmt(diff)}` : '—'}
+                          </td>
+                        )
+                      })}
                       <td className="td text-right fw-600" style={{ fontSize: 12, color: bp.total_diff > 0 ? 'var(--red)' : bp.total_diff < 0 ? 'var(--green)' : undefined }}>
                         {bp.total_diff !== 0 ? `${bp.total_diff > 0 ? '+' : ''}${fmt(bp.total_diff)}` : '—'}
                       </td>
@@ -123,7 +130,8 @@ function BudgetProjectsPlanFact({ data, navigate }) {
               </div>
               {bpIdx < data.length - 1 && <div className="divider" style={{ marginTop: 16 }} />}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </Section>
@@ -144,8 +152,16 @@ export default function BudgetProjectsTab({ year }) {
     </div>
   )
 
-  const totalPlan = bpData.reduce((s, bp) => s + bp.total_plan, 0)
-  const totalFact = bpData.reduce((s, bp) => s + bp.total_fact, 0)
+  const normalizedData = bpData.map(bp => ({
+    ...bp,
+    monthly_plan: Array.isArray(bp.monthly_plan) ? bp.monthly_plan : Array(12).fill(0),
+    monthly_fact: Array.isArray(bp.monthly_fact) ? bp.monthly_fact : Array(12).fill(0),
+    total_plan: Number(bp.total_plan) || 0,
+    total_fact: Number(bp.total_fact) || 0,
+    total_diff: Number(bp.total_diff) || 0,
+  }))
+  const totalPlan = normalizedData.reduce((s, bp) => s + bp.total_plan, 0)
+  const totalFact = normalizedData.reduce((s, bp) => s + bp.total_fact, 0)
 
   return (
     <div>
@@ -165,7 +181,7 @@ export default function BudgetProjectsTab({ year }) {
           <div className="stat-label">Общее отклонение</div>
         </div>
       </div>
-      <BudgetProjectsPlanFact data={bpData} navigate={navigate} />
+      <BudgetProjectsPlanFact data={normalizedData} navigate={navigate} />
     </div>
   )
 }

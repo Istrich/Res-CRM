@@ -31,18 +31,12 @@ export default function ProjectsTab({ year }) {
   if (isLoading) return <div className="empty-state"><span className="spinner" /></div>
 
   const totalFact = filtered.reduce((s, p) => s + p.total_fact, 0)
-  const totalPlan = filtered.filter(p => p.total_plan != null).reduce((s, p) => s + (p.total_plan || 0), 0)
-
   return (
     <div>
       <div className="grid-3" style={{ marginBottom: 20 }}>
         <div className="stat-card">
-          <div className="stat-value">{totalPlan > 0 ? fmt(totalPlan) + ' ₽' : '—'}</div>
-          <div className="stat-label">Суммарный план (с планами)</div>
-        </div>
-        <div className="stat-card">
           <div className="stat-value">{fmt(totalFact)} ₽</div>
-          <div className="stat-label">Фактические расходы</div>
+          <div className="stat-label">Фактические расходы / прогноз</div>
         </div>
         <div className="stat-card">
           <div className="stat-value">{filtered.length}</div>

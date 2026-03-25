@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  getBudgetOverview, recalculateBudgets, getLastCalculated,
+  getBudgetOverview, getLastCalculated,
   exportProjectsBudget, exportBudgetProjects, exportPayroll,
 } from '../api'
 import { useYearStore } from '../store/year'
@@ -10,7 +10,6 @@ import { fmt, MONTHS, statusLabel, statusColor, downloadBlob } from '../utils'
 
 export default function BudgetsPage() {
   const { year } = useYearStore()
-  const qc = useQueryClient()
   const navigate = useNavigate()
   const [tab, setTab] = useState('projects') // 'projects' | 'budget_projects'
 
@@ -22,16 +21,6 @@ export default function BudgetsPage() {
   const { data: lastCalc } = useQuery({
     queryKey: ['last-calculated', year],
     queryFn: () => getLastCalculated(year),
-  })
-
-  const recalcMut = useMutation({
-    mutationFn: () => recalculateBudgets(year),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['budget-overview', year] })
-      qc.invalidateQueries({ queryKey: ['last-calculated', year] })
-      qc.invalidateQueries({ queryKey: ['project-budget'] })
-      qc.invalidateQueries({ queryKey: ['budget-project-budget'] })
-    },
   })
 
   async function handleExport(type) {
@@ -66,22 +55,8 @@ export default function BudgetsPage() {
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleExport('projects')}>⬇ Проекты</button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleExport('budget_projects')}>⬇ Бюджетные</button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleExport('payroll')}>⬇ ФОТ</button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => recalcMut.mutate()}
-            disabled={recalcMut.isPending}
-          >
-            {recalcMut.isPending ? <><span className="spinner" /> Расчёт...</> : '↻ Пересчитать'}
-          </button>
         </div>
       </div>
-
-      {recalcMut.isSuccess && (
-        <div className="alert alert-success" style={{ marginBottom: 16 }}>
-          Расчёт завершён. Обновлено {recalcMut.data?.snapshots_updated} снапшотов.
-        </div>
-      )}
 
       {/* Total summary */}
       {overview && (

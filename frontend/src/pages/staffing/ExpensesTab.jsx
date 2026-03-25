@@ -303,6 +303,18 @@ export default function ExpensesTab() {
   function handleCellBlur(staffer, month, field) {
     const draft = getDraft(staffer.id, month, field)
     if (draft === undefined) return
+
+    // Inline-edit for staffer.task_description ("Задачи")
+    if (field === 'task_description') {
+      const textVal = draft === '' ? null : String(draft)
+      const serverVal = staffer.task_description ?? null
+      clearDraft(staffer.id, month, field)
+      setEditCell(null)
+      if (textVal === serverVal) return
+      updateStafferMut.mutate({ id: staffer.id, data: { task_description: textVal } })
+      return
+    }
+
     const numVal = draft === '' ? null : parseFloat(draft)
     clearDraft(staffer.id, month, field)
     setEditCell(null)
@@ -766,6 +778,8 @@ export default function ExpensesTab() {
     const rowFact = staffer.month_expenses.reduce((s, e) => s + (e.actual_amount || 0), 0)
     const wsBadge = STATUS_BADGE[staffer.work_status] || STATUS_BADGE['Активен']
     const extBadge = EXT_BADGE[staffer.extension_status]
+    const isEditingTasks = editCell?.stafferId === staffer.id && editCell?.month === 0 && editCell?.field === 'task_description'
+    const tasksDraft = getDraft(staffer.id, 0, 'task_description')
 
     return (
       <tr key={staffer.id} style={{ background: 'var(--surface)' }}>
@@ -809,8 +823,59 @@ export default function ExpensesTab() {
         </td>
 
         {/* Задачи */}
-        <td style={tdLeft(6)} title={staffer.task_description || ''}>
-          <span style={{ fontSize: 11, color: 'var(--text-2)' }}>{staffer.task_description || <span style={{ color: 'var(--border)' }}>—</span>}</span>
+        <td
+          style={tdLeft(6, isEditingTasks ? { overflow: 'visible', whiteSpace: 'normal', textOverflow: 'clip' } : {})}
+          title={staffer.task_description || ''}
+        >
+          {isEditingTasks ? (
+            <textarea
+              autoFocus
+              rows={2}
+              value={tasksDraft !== undefined ? tasksDraft : (staffer.task_description || '')}
+              onChange={e => setDraft(staffer.id, 0, 'task_description', e.target.value)}
+              onBlur={() => handleCellBlur(staffer, 0, 'task_description')}
+              onKeyDown={e => {
+                if (e.key === 'Escape') {
+                  clearDraft(staffer.id, 0, 'task_description')
+                  setEditCell(null)
+                }
+                if ((e.key === 'Enter' || e.key === 'NumpadEnter') && (e.ctrlKey || e.metaKey)) e.currentTarget.blur()
+              }}
+              style={{
+                width: '100%',
+                minHeight: 34,
+                border: '1px solid var(--accent)',
+                borderRadius: 3,
+                fontSize: 11,
+                padding: '3px 4px',
+                background: '#fff',
+                resize: 'vertical',
+                whiteSpace: 'pre-wrap',
+                boxSizing: 'border-box',
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                fontSize: 11,
+                color: staffer.task_description ? 'var(--text-2)' : 'var(--border)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              onClick={() => startEdit(staffer.id, 0, 'task_description', staffer.task_description)}
+              title="Нажмите для редактирования"
+            >
+              {staffer.task_description || '—'}
+            </button>
+          )}
         </td>
 
         {/* С (start) */}
