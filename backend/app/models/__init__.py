@@ -387,6 +387,9 @@ class Staffer(Base):
     work_status: Mapped[str | None] = mapped_column(String(50), nullable=True, default="Активен")
     extension_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     extension_comment: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    staffing_budget_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("staffing_budgets.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -394,6 +397,9 @@ class Staffer(Base):
 
     contractor: Mapped["Contractor | None"] = relationship("Contractor", back_populates="staffers")
     project: Mapped["Project | None"] = relationship("Project")
+    staffing_budget: Mapped["StaffingBudget | None"] = relationship(
+        "StaffingBudget", back_populates="staffers"
+    )
     month_expenses: Mapped[list["StafferMonthExpense"]] = relationship(
         "StafferMonthExpense", back_populates="staffer", cascade="all, delete-orphan"
     )
@@ -513,6 +519,7 @@ class StaffingBudget(Base):
     month_plans: Mapped[list["StaffingBudgetMonthPlan"]] = relationship(
         "StaffingBudgetMonthPlan", back_populates="budget", cascade="all, delete-orphan"
     )
+    staffers: Mapped[list["Staffer"]] = relationship("Staffer", back_populates="staffing_budget")
 
 
 # ---------------------------------------------------------------------------

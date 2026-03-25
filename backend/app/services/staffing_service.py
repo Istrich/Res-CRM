@@ -125,6 +125,8 @@ def build_staffer_out(staffer: Staffer) -> dict:
         "contractor_name": staffer.contractor.name if staffer.contractor else None,
         "project_id": str(staffer.project_id) if staffer.project_id else None,
         "project_name": staffer.project.name if staffer.project else None,
+        "staffing_budget_id": str(staffer.staffing_budget_id) if staffer.staffing_budget_id else None,
+        "staffing_budget_name": staffer.staffing_budget.name if staffer.staffing_budget else None,
         "specialization": staffer.specialization,
         "hourly_rate": float(staffer.hourly_rate),
         "valid_from": staffer.valid_from,

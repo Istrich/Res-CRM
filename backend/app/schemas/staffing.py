@@ -58,6 +58,7 @@ class StafferCreate(BaseModel):
     middle_name: Optional[str] = Field(None, max_length=100)
     contractor_id: Optional[uuid.UUID] = None
     project_id: Optional[uuid.UUID] = None
+    staffing_budget_id: Optional[uuid.UUID] = None
     specialization: Optional[str] = Field(None, max_length=255)
     hourly_rate: float = Field(0, ge=0)
     valid_from: date
@@ -78,6 +79,7 @@ class StafferUpdate(BaseModel):
     middle_name: Optional[str] = Field(None, max_length=100)
     contractor_id: Optional[uuid.UUID] = None
     project_id: Optional[uuid.UUID] = None
+    staffing_budget_id: Optional[uuid.UUID] = None
     specialization: Optional[str] = Field(None, max_length=255)
     hourly_rate: Optional[float] = Field(None, ge=0)
     valid_from: Optional[date] = None
@@ -105,6 +107,8 @@ class StafferOut(BaseModel):
     contractor_name: Optional[str] = None
     project_id: Optional[uuid.UUID] = None
     project_name: Optional[str] = None
+    staffing_budget_id: Optional[uuid.UUID] = None
+    staffing_budget_name: Optional[str] = None
     specialization: Optional[str] = None
     hourly_rate: float
     valid_from: date
@@ -180,6 +184,8 @@ class StafferMatrixRow(BaseModel):
     specialization: Optional[str] = None
     project_id: Optional[uuid.UUID] = None
     project_name: Optional[str] = None
+    staffing_budget_id: Optional[uuid.UUID] = None
+    staffing_budget_name: Optional[str] = None
     task_description: Optional[str] = None
     hourly_rate: float
     valid_from: date
@@ -274,6 +280,22 @@ class StaffingBudgetUpdate(BaseModel):
     total_budget: Optional[float] = Field(None, ge=0)
 
 
+class StaffingBudgetMonthDetailItem(BaseModel):
+    month: int
+    plan_amount: float = 0.0
+    fact_amount: float = 0.0
+    has_fact: bool = False
+
+
+class StaffingBudgetStafferPreview(BaseModel):
+    id: uuid.UUID
+    full_name: str
+    project_name: Optional[str] = None
+    hourly_rate: float = 0
+    valid_from: date
+    valid_to: Optional[date] = None
+
+
 class StaffingBudgetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -284,6 +306,8 @@ class StaffingBudgetOut(BaseModel):
     plan_total: float = 0.0
     fact_total: float = 0.0
     delta: float = 0.0
+    staffer_count: int = 0
+    staffers: list[StaffingBudgetStafferPreview] = []
     created_at: datetime
     updated_at: datetime
 

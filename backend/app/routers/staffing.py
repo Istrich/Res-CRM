@@ -51,6 +51,7 @@ from app.schemas.staffing import (
     StafferPrefillPlanResult,
     StafferUpdate,
     StaffingBudgetCreate,
+    StaffingBudgetMonthDetailItem,
     StaffingBudgetMonthPlanBatch,
     StaffingBudgetMonthPlanOut,
     StaffingBudgetOut,
@@ -324,7 +325,11 @@ def list_staffers(
 ):
     q = (
         db.query(Staffer)
-        .options(joinedload(Staffer.contractor), joinedload(Staffer.project))
+        .options(
+            joinedload(Staffer.contractor),
+            joinedload(Staffer.project),
+            joinedload(Staffer.staffing_budget),
+        )
     )
     if project_id:
         q = q.filter(Staffer.project_id == project_id)
@@ -355,6 +360,9 @@ def create_staffer(
     if body.project_id:
         if not db.query(Project).filter(Project.id == body.project_id).first():
             raise HTTPException(status_code=404, detail="Project not found")
+    if body.staffing_budget_id:
+        if not db.query(StaffingBudget).filter(StaffingBudget.id == body.staffing_budget_id).first():
+            raise HTTPException(status_code=404, detail="Staffing budget not found")
 
     s = Staffer(**body.model_dump())
     db.add(s)
@@ -363,7 +371,11 @@ def create_staffer(
     _trigger_expense_recalc(db, s)
     s = (
         db.query(Staffer)
-        .options(joinedload(Staffer.contractor), joinedload(Staffer.project))
+        .options(
+            joinedload(Staffer.contractor),
+            joinedload(Staffer.project),
+            joinedload(Staffer.staffing_budget),
+        )
         .filter(Staffer.id == s.id)
         .one()
     )
@@ -378,7 +390,11 @@ def get_staffer(
 ):
     s = (
         db.query(Staffer)
-        .options(joinedload(Staffer.contractor), joinedload(Staffer.project))
+        .options(
+            joinedload(Staffer.contractor),
+            joinedload(Staffer.project),
+            joinedload(Staffer.staffing_budget),
+        )
         .filter(Staffer.id == staffer_id)
         .first()
     )
@@ -405,6 +421,9 @@ def update_staffer(
     if "project_id" in data and data["project_id"]:
         if not db.query(Project).filter(Project.id == data["project_id"]).first():
             raise HTTPException(status_code=404, detail="Project not found")
+    if "staffing_budget_id" in data and data["staffing_budget_id"]:
+        if not db.query(StaffingBudget).filter(StaffingBudget.id == data["staffing_budget_id"]).first():
+            raise HTTPException(status_code=404, detail="Staffing budget not found")
 
     for k, v in data.items():
         setattr(s, k, v)
@@ -412,7 +431,11 @@ def update_staffer(
     _trigger_expense_recalc(db, s)
     s = (
         db.query(Staffer)
-        .options(joinedload(Staffer.contractor), joinedload(Staffer.project))
+        .options(
+            joinedload(Staffer.contractor),
+            joinedload(Staffer.project),
+            joinedload(Staffer.staffing_budget),
+        )
         .filter(Staffer.id == s.id)
         .one()
     )
@@ -671,14 +694,45 @@ def delete_invoice(
 # ===========================================================================
 
 def _build_budget_out(budget: StaffingBudget, db: Session) -> StaffingBudgetOut:
+    from app.schemas.staffing import StaffingBudgetStafferPreview
+
     plan_total = sum(float(mp.amount) for mp in budget.month_plans)
-    fact_rows = (
-        db.query(StaffingExpense)
-        .filter(StaffingExpense.year == budget.year)
+
+    linked_staffers = (
+        db.query(Staffer)
+        .options(joinedload(Staffer.project))
+        .filter(Staffer.staffing_budget_id == budget.id)
         .all()
     )
-    fact_total = sum(float(r.fact_amount) for r in fact_rows)
+    linked_ids = [s.id for s in linked_staffers]
+
+    fact_total = 0.0
+    if linked_ids:
+        fact_rows = (
+            db.query(StafferMonthExpense)
+            .filter(
+                StafferMonthExpense.staffer_id.in_(linked_ids),
+                StafferMonthExpense.year == budget.year,
+                StafferMonthExpense.actual_amount.isnot(None),
+            )
+            .all()
+        )
+        fact_total = sum(float(r.actual_amount) for r in fact_rows)
+
     delta = plan_total - fact_total
+
+    staffers_preview = [
+        StaffingBudgetStafferPreview(
+            id=s.id,
+            full_name=s.full_name,
+            project_name=s.project.name if s.project else None,
+            hourly_rate=float(s.hourly_rate),
+            valid_from=s.valid_from,
+            valid_to=s.valid_to,
+        )
+        for s in linked_staffers
+    ]
+
     return StaffingBudgetOut(
         id=budget.id,
         name=budget.name,
@@ -687,6 +741,8 @@ def _build_budget_out(budget: StaffingBudget, db: Session) -> StaffingBudgetOut:
         plan_total=plan_total,
         fact_total=fact_total,
         delta=delta,
+        staffer_count=len(linked_staffers),
+        staffers=staffers_preview,
         created_at=budget.created_at,
         updated_at=budget.updated_at,
     )
@@ -698,7 +754,10 @@ def list_budgets(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    q = db.query(StaffingBudget).options(joinedload(StaffingBudget.month_plans))
+    q = db.query(StaffingBudget).options(
+        joinedload(StaffingBudget.month_plans),
+        joinedload(StaffingBudget.staffers),
+    )
     if year:
         q = q.filter(StaffingBudget.year == year)
     budgets = q.order_by(StaffingBudget.year.desc(), StaffingBudget.name).all()
@@ -717,7 +776,10 @@ def create_budget(
     db.refresh(b)
     b = (
         db.query(StaffingBudget)
-        .options(joinedload(StaffingBudget.month_plans))
+        .options(
+            joinedload(StaffingBudget.month_plans),
+            joinedload(StaffingBudget.staffers),
+        )
         .filter(StaffingBudget.id == b.id)
         .one()
     )
@@ -732,7 +794,10 @@ def get_budget(
 ):
     b = (
         db.query(StaffingBudget)
-        .options(joinedload(StaffingBudget.month_plans))
+        .options(
+            joinedload(StaffingBudget.month_plans),
+            joinedload(StaffingBudget.staffers),
+        )
         .filter(StaffingBudget.id == budget_id)
         .first()
     )
@@ -756,7 +821,10 @@ def update_budget(
     db.commit()
     b = (
         db.query(StaffingBudget)
-        .options(joinedload(StaffingBudget.month_plans))
+        .options(
+            joinedload(StaffingBudget.month_plans),
+            joinedload(StaffingBudget.staffers),
+        )
         .filter(StaffingBudget.id == b.id)
         .one()
     )
@@ -847,6 +915,56 @@ def upsert_budget_month_plan(
     return plans
 
 
+@router.get("/budgets/{budget_id}/month-detail", response_model=list[StaffingBudgetMonthDetailItem])
+def get_budget_month_detail(
+    budget_id: uuid.UUID,
+    year: int = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    b = db.query(StaffingBudget).filter(StaffingBudget.id == budget_id).first()
+    if not b:
+        raise HTTPException(status_code=404, detail="Budget not found")
+
+    plans = (
+        db.query(StaffingBudgetMonthPlan)
+        .filter(
+            StaffingBudgetMonthPlan.staffing_budget_id == budget_id,
+            StaffingBudgetMonthPlan.year == year,
+        )
+        .all()
+    )
+    plan_by_month = {p.month: float(p.amount) for p in plans}
+
+    linked_ids = [
+        row[0] for row in db.query(Staffer.id).filter(Staffer.staffing_budget_id == budget_id).all()
+    ]
+
+    fact_by_month = {}
+    if linked_ids:
+        expenses = (
+            db.query(StafferMonthExpense)
+            .filter(
+                StafferMonthExpense.staffer_id.in_(linked_ids),
+                StafferMonthExpense.year == year,
+            )
+            .all()
+        )
+        for e in expenses:
+            if e.actual_amount is not None:
+                fact_by_month[e.month] = fact_by_month.get(e.month, 0) + float(e.actual_amount)
+
+    return [
+        StaffingBudgetMonthDetailItem(
+            month=m,
+            plan_amount=plan_by_month.get(m, 0),
+            fact_amount=fact_by_month.get(m, 0) if m in fact_by_month else 0,
+            has_fact=m in fact_by_month,
+        )
+        for m in range(1, 13)
+    ]
+
+
 # ===========================================================================
 # Staffer Expense Matrix (per-staffer per-month)
 # ===========================================================================
@@ -888,6 +1006,7 @@ def get_staffer_matrix(
         .options(
             joinedload(Staffer.contractor),
             joinedload(Staffer.project),
+            joinedload(Staffer.staffing_budget),
             joinedload(Staffer.month_expenses).joinedload(StafferMonthExpense.invoice_files),
             joinedload(Staffer.month_rates),
         )
@@ -923,6 +1042,8 @@ def get_staffer_matrix(
                 specialization=s.specialization,
                 project_id=s.project_id,
                 project_name=s.project.name if s.project else None,
+                staffing_budget_id=s.staffing_budget_id,
+                staffing_budget_name=s.staffing_budget.name if s.staffing_budget else None,
                 task_description=s.task_description,
                 hourly_rate=float(s.hourly_rate),
                 valid_from=s.valid_from,

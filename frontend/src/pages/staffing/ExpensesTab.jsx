@@ -1119,6 +1119,7 @@ export default function ExpensesTab() {
           staffer={drawerStaffer}
           projects={projects}
           contractors={contractors}
+          budgets={budgets}
           saving={updateStafferMut.isPending}
           onClose={() => setDrawerStaffer(null)}
           onSave={data => updateStafferMut.mutate({ id: drawerStaffer.id, data })}
@@ -1153,13 +1154,14 @@ export default function ExpensesTab() {
 
 // ─── StafferDrawer ────────────────────────────────────────────────────────────
 
-function StafferDrawer({ staffer, projects, contractors, saving, onClose, onSave }) {
+function StafferDrawer({ staffer, projects, contractors, budgets, saving, onClose, onSave }) {
   const [form, setForm] = useState({
     last_name:         staffer.last_name || '',
     first_name:        staffer.first_name || '',
     middle_name:       staffer.middle_name || '',
     contractor_id:     staffer.contractor_id || '',
     project_id:        staffer.project_id || '',
+    staffing_budget_id: staffer.staffing_budget_id || '',
     specialization:    staffer.specialization || '',
     rating:            staffer.rating ? String(staffer.rating) : '',
     task_description:  staffer.task_description || '',
@@ -1184,6 +1186,7 @@ function StafferDrawer({ staffer, projects, contractors, saving, onClose, onSave
       middle_name:       form.middle_name || null,
       contractor_id:     form.contractor_id || null,
       project_id:        form.project_id || null,
+      staffing_budget_id: form.staffing_budget_id || null,
       specialization:    form.specialization || null,
       rating:            form.rating ? parseInt(form.rating) : null,
       task_description:  form.task_description || null,
@@ -1251,6 +1254,12 @@ function StafferDrawer({ staffer, projects, contractors, saving, onClose, onSave
               </select>
             </div>
           </div>
+
+          <label {...lbl}>Бюджет стаффинга</label>
+          <select {...inp} value={form.staffing_budget_id} onChange={f('staffing_budget_id')}>
+            <option value="">— не выбрано —</option>
+            {(budgets || []).map(b => <option key={b.id} value={b.id}>{b.name} ({b.year})</option>)}
+          </select>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
