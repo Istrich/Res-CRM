@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  getStaffer, updateStaffer, deleteStaffer, getProjects, getContractors,
+  getStaffer, updateStaffer, deleteStaffer, getProjects, getContractors, getStaffingBudgets,
   getStafferMonthRates, upsertStafferMonthRate, deleteStafferMonthRate,
 } from '../../api'
 import Confirm from '../../components/ui/Confirm'
@@ -119,6 +119,10 @@ export default function StafferDetailPage() {
 
   const { data: projects = [] } = useQuery({ queryKey: ['projects-list'], queryFn: getProjects })
   const { data: contractors = [] } = useQuery({ queryKey: ['contractors-list'], queryFn: getContractors })
+  const { data: budgets = [] } = useQuery({
+    queryKey: ['staffing-budgets'],
+    queryFn: () => getStaffingBudgets(),
+  })
 
   const { data: monthRates = [] } = useQuery({
     queryKey: ['staffer-month-rates', id, year],
@@ -160,6 +164,7 @@ export default function StafferDetailPage() {
       comment: d.comment || '',
       contractor_id: d.contractor_id || '',
       project_id: d.project_id || '',
+      staffing_budget_id: d.staffing_budget_id || '',
     }
   }
 
@@ -190,6 +195,7 @@ export default function StafferDetailPage() {
       hourly_rate: parseFloat(f.hourly_rate) || 0,
       contractor_id: f.contractor_id || null,
       project_id: f.project_id || null,
+      staffing_budget_id: f.staffing_budget_id || null,
       valid_to: f.valid_to || null,
       middle_name: f.middle_name || null,
       pm_name: f.pm_name || null,
@@ -282,6 +288,19 @@ export default function StafferDetailPage() {
                 </select>
               )
               : <div style={{ padding: '6px 0', fontSize: 14 }}>{staffer.contractor_name || '—'}</div>
+            }
+          </div>
+
+          <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+            <label className="label">Бюджет стаффинга</label>
+            {editing
+              ? (
+                <select className="select" style={{ width: '100%' }} value={f.staffing_budget_id} onChange={e => setForm({ ...f, staffing_budget_id: e.target.value })}>
+                  <option value="">— не выбрано —</option>
+                  {budgets.map(b => <option key={b.id} value={b.id}>{b.name} ({b.year})</option>)}
+                </select>
+              )
+              : <div style={{ padding: '6px 0', fontSize: 14 }}>{staffer.staffing_budget_name || '—'}</div>
             }
           </div>
         </div>

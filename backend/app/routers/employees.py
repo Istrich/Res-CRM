@@ -81,7 +81,12 @@ def list_employees(
         q = q.join(Employee.employee_projects).filter(EmployeeProject.project_id == project_id)
 
     employees = q.order_by(Employee.last_name, Employee.first_name).all()
-    hours_map = get_working_hours_map(db, year) if year else {}
+    hours_map = None
+    if year:
+        # Keep API contract for /employees: when working hours are not configured
+        # for the requested year, monthly_hourly_rates should be null.
+        loaded_hours = get_working_hours_map(db, year)
+        hours_map = loaded_hours if loaded_hours else None
     return [build_list_item(e, year, month, hours_map=hours_map) for e in employees]
 
 

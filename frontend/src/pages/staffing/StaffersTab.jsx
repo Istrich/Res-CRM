@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getStaffers, createStaffer, deleteStaffer, getProjects, getContractors } from '../../api'
+import { getStaffers, createStaffer, deleteStaffer, getProjects, getContractors, getStaffingBudgets } from '../../api'
 import { useYearStore } from '../../store/year'
 import Modal from '../../components/ui/Modal'
 import Confirm from '../../components/ui/Confirm'
@@ -10,6 +10,7 @@ const EMPTY_FORM = {
   first_name: '', last_name: '', middle_name: '',
   specialization: '', hourly_rate: '', valid_from: '', valid_to: '',
   pm_name: '', comment: '', contractor_id: '', project_id: '',
+  staffing_budget_id: '',
 }
 
 export default function StaffersTab() {
@@ -26,6 +27,10 @@ export default function StaffersTab() {
   })
   const { data: projects = [] } = useQuery({ queryKey: ['projects-list'], queryFn: () => getProjects() })
   const { data: contractors = [] } = useQuery({ queryKey: ['contractors-list'], queryFn: getContractors })
+  const { data: budgets = [] } = useQuery({
+    queryKey: ['staffing-budgets'],
+    queryFn: () => getStaffingBudgets(),
+  })
 
   const createMut = useMutation({
     mutationFn: createStaffer,
@@ -49,6 +54,7 @@ export default function StaffersTab() {
       hourly_rate: parseFloat(form.hourly_rate) || 0,
       contractor_id: form.contractor_id || null,
       project_id: form.project_id || null,
+      staffing_budget_id: form.staffing_budget_id || null,
       valid_to: form.valid_to || null,
       middle_name: form.middle_name || null,
       pm_name: form.pm_name || null,
@@ -72,6 +78,7 @@ export default function StaffersTab() {
               <th className="th">ФИО</th>
               <th className="th">Специализация</th>
               <th className="th">Проект</th>
+              <th className="th">Бюджет</th>
               <th className="th text-right">Ставка (₽/ч)</th>
               <th className="th">Подрядчик</th>
               <th className="th">Дата до</th>
@@ -81,16 +88,17 @@ export default function StaffersTab() {
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td className="td" colSpan={8} style={{ textAlign: 'center' }}><span className="spinner" /></td></tr>
+              <tr><td className="td" colSpan={9} style={{ textAlign: 'center' }}><span className="spinner" /></td></tr>
             )}
             {!isLoading && staffers.length === 0 && (
-              <tr><td className="td" colSpan={8}><div className="empty-state">Нет стафферов</div></td></tr>
+              <tr><td className="td" colSpan={9}><div className="empty-state">Нет стафферов</div></td></tr>
             )}
             {staffers.map(s => (
               <tr key={s.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/staffing/staffers/${s.id}`)}>
                 <td className="td fw-500">{s.full_name}</td>
                 <td className="td text-muted">{s.specialization || '—'}</td>
                 <td className="td">{s.project_name || '—'}</td>
+                <td className="td">{s.staffing_budget_name || '—'}</td>
                 <td className="td text-right">{Number(s.hourly_rate).toLocaleString('ru-RU')}</td>
                 <td className="td">{s.contractor_name || '—'}</td>
                 <td className="td">{s.valid_to || '∞'}</td>
@@ -171,6 +179,16 @@ export default function StaffersTab() {
               <select className="select" style={{ width: '100%' }} value={form.contractor_id} onChange={e => setForm({ ...form, contractor_id: e.target.value })}>
                 <option value="">— не выбрано —</option>
                 {contractors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="label">Бюджет стаффинга</label>
+              <select className="select" style={{ width: '100%' }}
+                value={form.staffing_budget_id}
+                onChange={e => setForm({ ...form, staffing_budget_id: e.target.value })}
+              >
+                <option value="">— не выбрано —</option>
+                {budgets.map(b => <option key={b.id} value={b.id}>{b.name} ({b.year})</option>)}
               </select>
             </div>
           </div>

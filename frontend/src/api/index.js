@@ -205,3 +205,5 @@ export const getStaffingBudgetMonthPlan = (id, year) =>
   api.get(`/staffing/budgets/${id}/month-plan`, { params: { year } }).then(r => r.data)
 export const putStaffingBudgetMonthPlan = (id, year, items) =>
   api.put(`/staffing/budgets/${id}/month-plan`, { year, items }).then(r => r.data)
+export const getStaffingBudgetMonthDetail = (id, year) =>
+  api.get(`/staffing/budgets/${id}/month-detail`, { params: { year } }).then(r => r.data)

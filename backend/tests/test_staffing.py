@@ -199,6 +199,33 @@ class TestStaffersAPI:
         r = client.get("/staffing/staffers")
         assert r.status_code == 401
 
+    def test_create_staffing_budget_not_found(self, authed_client):
+        r = authed_client.post(
+            "/staffing/staffers",
+            json={
+                "last_name": "НетБюджета",
+                "hourly_rate": 1000.0,
+                "valid_from": "2024-01-01",
+                "staffing_budget_id": str(uuid.uuid4()),
+            },
+        )
+        assert r.status_code == 404
+
+    def test_update_staffing_budget_not_found(self, authed_client):
+        s = authed_client.post(
+            "/staffing/staffers",
+            json={
+                "last_name": "ПатчБюджет",
+                "hourly_rate": 1000.0,
+                "valid_from": "2024-01-01",
+            },
+        ).json()
+        r = authed_client.patch(
+            f"/staffing/staffers/{s['id']}",
+            json={"staffing_budget_id": str(uuid.uuid4())},
+        )
+        assert r.status_code == 404
+
 
 # ===========================================================================
 # Expenses API
@@ -416,8 +443,8 @@ class TestStaffingBudgetsAPI:
         r = authed_client.get(f"/staffing/budgets/{uuid.uuid4()}/month-plan", params={"year": 2024})
         assert r.status_code == 404
 
-    def test_plan_fact_delta(self, authed_client, db):
-        """Delta = plan_total - fact_total (fact from expenses)."""
+    def test_plan_fact_delta_from_linked_staffers(self, authed_client, db):
+        """Delta = plan_total - fact_total; fact = sum(actual_amount) for staffers with staffing_budget_id."""
         from app.models import BudgetProject
         bp_model = BudgetProject(name="BP", year=2024, total_budget=500000)
         db.add(bp_model)
@@ -430,8 +457,32 @@ class TestStaffingBudgetsAPI:
         items = [{"month": m, "amount": 100_000} for m in range(1, 13)]
         authed_client.put(f"/staffing/budgets/{b['id']}/month-plan", json={"year": 2024, "items": items})
 
+        # Project-level StaffingExpense must NOT affect staffing budget fact
         authed_client.put(f"/staffing/expenses/{p.id}/2024/1", json={"fact_amount": 50_000.0})
         authed_client.put(f"/staffing/expenses/{p.id}/2024/2", json={"fact_amount": 80_000.0})
+        r0 = authed_client.get(f"/staffing/budgets/{b['id']}")
+        assert r0.json()["fact_total"] == 0.0
+        assert r0.json()["staffer_count"] == 0
+
+        s = authed_client.post(
+            "/staffing/staffers",
+            json={
+                "last_name": "Линк",
+                "hourly_rate": 1000.0,
+                "valid_from": "2024-01-01",
+                "staffing_budget_id": b["id"],
+            },
+        ).json()
+        assert s["staffing_budget_name"] == "Budget"
+
+        authed_client.put(
+            f"/staffing/staffer-expenses/{s['id']}/2024/1",
+            json={"actual_amount": 50_000.0},
+        )
+        authed_client.put(
+            f"/staffing/staffer-expenses/{s['id']}/2024/2",
+            json={"actual_amount": 80_000.0},
+        )
 
         r = authed_client.get(f"/staffing/budgets/{b['id']}")
         assert r.status_code == 200
@@ -439,9 +490,59 @@ class TestStaffingBudgetsAPI:
         assert data["plan_total"] == 1_200_000.0
         assert data["fact_total"] == 130_000.0
         assert data["delta"] == pytest.approx(1_070_000.0)
+        assert data["staffer_count"] == 1
+        assert len(data["staffers"]) == 1
+        assert data["staffers"][0]["hourly_rate"] == 1000.0
 
     def test_requires_auth(self, client):
         r = client.get("/staffing/budgets")
+        assert r.status_code == 401
+
+    def test_month_detail_happy(self, authed_client):
+        b = authed_client.post("/staffing/budgets", json={"name": "MonthDet", "year": 2024}).json()
+        authed_client.put(
+            f"/staffing/budgets/{b['id']}/month-plan",
+            json={
+                "year": 2024,
+                "items": [{"month": 1, "amount": 10000}, {"month": 2, "amount": 20000}],
+            },
+        )
+        s = authed_client.post(
+            "/staffing/staffers",
+            json={
+                "last_name": "Факт",
+                "hourly_rate": 500.0,
+                "valid_from": "2024-01-01",
+                "staffing_budget_id": b["id"],
+            },
+        ).json()
+        authed_client.put(
+            f"/staffing/staffer-expenses/{s['id']}/2024/1",
+            json={"actual_amount": 5000.0},
+        )
+        r = authed_client.get(f"/staffing/budgets/{b['id']}/month-detail", params={"year": 2024})
+        assert r.status_code == 200
+        rows = r.json()
+        assert len(rows) == 12
+        m1 = next(x for x in rows if x["month"] == 1)
+        assert m1["plan_amount"] == 10000.0
+        assert m1["fact_amount"] == 5000.0
+        assert m1["has_fact"] is True
+        m3 = next(x for x in rows if x["month"] == 3)
+        assert m3["plan_amount"] == 0.0
+        assert m3["has_fact"] is False
+
+    def test_month_detail_budget_not_found(self, authed_client):
+        r = authed_client.get(f"/staffing/budgets/{uuid.uuid4()}/month-detail", params={"year": 2024})
+        assert r.status_code == 404
+
+    def test_month_detail_requires_year(self, authed_client):
+        b = authed_client.post("/staffing/budgets", json={"name": "Y", "year": 2024}).json()
+        r = authed_client.get(f"/staffing/budgets/{b['id']}/month-detail")
+        assert r.status_code == 422
+
+    def test_month_detail_requires_auth(self, client):
+        r = client.get(f"/staffing/budgets/{uuid.uuid4()}/month-detail", params={"year": 2024})
         assert r.status_code == 401
 
 
