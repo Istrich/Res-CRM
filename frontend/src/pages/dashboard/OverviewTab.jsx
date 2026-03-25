@@ -17,25 +17,10 @@ export default function OverviewTab({ year }) {
   const { data: bySpec = [] } = useQuery({ queryKey: ['dashboard-by-spec', year], queryFn: () => getDashboardBySpec(year) })
   const { data: movements = [] } = useQuery({ queryKey: ['dashboard-movements', year], queryFn: () => getMovements(year) })
 
-  const today = new Date()
-  const currentYear = today.getFullYear()
-  const currentMonthIdx = today.getMonth() // 0-based
-
-  const monthlyData = summary?.monthly_spend?.map((m, i) => {
-    const planAmt = summary.monthly_plan?.[i]?.amount ?? 0
-    if (year < currentYear) {
-      // прошлый год: факт + план для сравнения
-      return { month: MONTHS[i], fact: m.amount, plan: planAmt }
-    } else if (year > currentYear) {
-      // будущий год: только план
-      return { month: MONTHS[i], fact: null, plan: planAmt }
-    } else {
-      // текущий год: прошлые месяцы — факт + план, будущие — только план
-      return i < currentMonthIdx
-        ? { month: MONTHS[i], fact: m.amount, plan: planAmt }
-        : { month: MONTHS[i], fact: null, plan: planAmt }
-    }
-  }) || []
+  const monthlyData = summary?.monthly_spend?.map((m, i) => ({
+    month: MONTHS[i],
+    fact: m.amount,
+  })) || []
 
   const selectedMovement = movementsMonth != null ? movements.find(m => m.month === movementsMonth + 1) : null
 
@@ -58,7 +43,7 @@ export default function OverviewTab({ year }) {
       )}
 
       <Section title={`Расходы по месяцам — ${year}`}>
-        {monthlyData.every(d => !d.fact && !d.plan)
+        {monthlyData.every(d => !d.fact)
           ? <EmptyState />
           : (
             <ResponsiveContainer width="100%" height={220}>
@@ -67,9 +52,7 @@ export default function OverviewTab({ year }) {
                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                 <Tooltip content={<CustomTooltip currency />} />
-                <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="fact" name="Факт" fill="#3b5bdb" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="plan" name="План" fill="#94a3b8" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="fact" name="Факт / прогноз" fill="#3b5bdb" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )

@@ -10,7 +10,6 @@ from app.models import BudgetProject, BudgetSnapshot, Project, User
 from app.services.budget_plan import (
     get_budget_project_month_fact,
     get_budget_project_month_plan,
-    get_project_month_plan,
 )
 from app.services.calc import (
     get_budget_project_summary,
@@ -78,29 +77,12 @@ def project_budget(
         for s in snapshots
     ]
 
-    monthly_plan = get_project_month_plan(db, project_id, year)
-    monthly_diff = None
-    if monthly_plan:
-        by_plan = {p["month"]: p["amount"] for p in monthly_plan}
-        by_fact = {s.month: float(s.amount) for s in snapshots}
-        monthly_diff = [
-            {
-                "month": m,
-                "plan": by_plan.get(m, 0),
-                "fact": by_fact.get(m, 0),
-                "diff": round(by_fact.get(m, 0) - by_plan.get(m, 0), 2),
-            }
-            for m in range(1, 13)
-        ]
-
     return {
         "project_id": str(project_id),
         "project_name": proj.name,
         "year": year,
         **summary,
         "monthly": monthly,
-        "monthly_plan": monthly_plan,
-        "monthly_diff": monthly_diff,
     }
 
 
@@ -116,7 +98,6 @@ def budget_project_budget(
         raise HTTPException(status_code=404, detail="Budget project not found")
 
     summary = get_budget_project_summary(db, bp_id, year)
-
     monthly_plan = get_budget_project_month_plan(db, bp_id, year)
     monthly_fact = get_budget_project_month_fact(db, bp_id, year)
     by_plan = {p["month"]: p["amount"] for p in monthly_plan}

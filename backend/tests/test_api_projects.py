@@ -326,49 +326,6 @@ class TestBudgetsAPI:
         assert "forecast" in data
         assert "monthly" in data
         assert len(data["monthly"]) == 12
-        # Project under budget project has monthly_plan and monthly_diff
-        assert "monthly_plan" in data
-        assert "monthly_diff" in data
-        if data.get("monthly_plan"):
-            assert len(data["monthly_plan"]) == 12
-            assert len(data["monthly_diff"]) == 12
-
-
-class TestProjectMonthPlanAPI:
-    def test_get_month_plan_for_standalone_project_returns_zeros(self, authed_client, make_project):
-        proj = make_project(budget_project=None)
-        r = authed_client.get(f"/projects/{proj.id}/month-plan?year=2024")
-        assert r.status_code == 200
-        data = r.json()
-        assert "items" in data
-        assert len(data["items"]) == 12
-        assert all(it["amount"] == 0 for it in data["items"])
-
-    def test_put_and_get_project_month_plan(self, authed_client, make_project):
-        proj = make_project()
-        items = [{"month": m, "amount": 100_000 * m} for m in range(1, 13)]
-        r = authed_client.put(
-            f"/projects/{proj.id}/month-plan?year=2024",
-            json={"items": items},
-        )
-        assert r.status_code == 200
-        data = r.json()
-        assert len(data["items"]) == 12
-        total = sum(it["amount"] for it in data["items"])
-        assert total == 100_000 * (1 + 12) * 12 // 2
-
-        r2 = authed_client.get(f"/projects/{proj.id}/month-plan?year=2024")
-        assert r2.status_code == 200
-        data2 = r2.json()
-        assert len(data2["items"]) == 12
-        assert sum(it["amount"] for it in data2["items"]) == total
-
-    def test_put_month_plan_404(self, authed_client):
-        r = authed_client.put(
-            f"/projects/{uuid.uuid4()}/month-plan?year=2024",
-            json={"items": [{"month": m, "amount": 0} for m in range(1, 13)]},
-        )
-        assert r.status_code == 404
 
     @freeze_time("2024-06-15")
     def test_budget_project_budget(self, authed_client, full_setup):

@@ -46,8 +46,6 @@ export function EmptyState({ text = 'Нет данных. Нажмите «Пе�
 }
 
 export function PlanFactTable({ rows, nameKey, nameLabel = 'Проект', onRowClick }) {
-  const [expanded, setExpanded] = useState(null)
-
   return (
     <div className="overflow-table">
       <table>
@@ -65,10 +63,7 @@ export function PlanFactTable({ rows, nameKey, nameLabel = 'Проект', onRow
         <tbody>
           {rows.map((row, ri) => {
             const name = row[nameKey]
-            const isExpanded = expanded === ri
-            const hasPlan = row.monthly_plan != null
             const totalFact = row.total_fact
-            const totalPlan = row.total_plan
 
             return [
               <tr
@@ -78,17 +73,6 @@ export function PlanFactTable({ rows, nameKey, nameLabel = 'Проект', onRow
               >
                 <td className="td" style={{ fontWeight: 500 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {hasPlan && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm btn-icon"
-                        style={{ padding: '2px 4px', fontSize: 10 }}
-                        onClick={e => { e.stopPropagation(); setExpanded(isExpanded ? null : ri) }}
-                        title={isExpanded ? 'Скрыть план' : 'Показать план и отклонение'}
-                      >
-                        {isExpanded ? '▲' : '▼'}
-                      </button>
-                    )}
                     <span>{name}</span>
                     {row.budget_project_name && (
                       <span className="text-muted text-small" style={{ fontWeight: 400 }}>({row.budget_project_name})</span>
@@ -102,48 +86,10 @@ export function PlanFactTable({ rows, nameKey, nameLabel = 'Проект', onRow
                 ))}
                 <td className="td text-right" style={{ fontWeight: 600 }}>{fmt(totalFact)}</td>
               </tr>,
-
-              ...(isExpanded && hasPlan ? [
-                <tr key={`${ri}-plan`} style={{ background: 'var(--accent-light)' }}>
-                  <td className="td text-muted text-small" style={{ paddingLeft: 32 }}>план</td>
-                  {row.monthly_plan.map((v, i) => (
-                    <td className="td text-right text-small" key={i} style={{ color: 'var(--accent)', ...(i === new Date().getMonth() && { background: '#e8efff' }) }}>
-                      {v > 0 ? fmt(v) : <span style={{ color: 'var(--border)' }}>—</span>}
-                    </td>
-                  ))}
-                  <td className="td text-right text-small" style={{ color: 'var(--accent)', fontWeight: 600 }}>{fmt(totalPlan)}</td>
-                </tr>,
-                <tr key={`${ri}-diff`} style={{ background: 'var(--surface2)' }}>
-                  <td className="td text-muted text-small" style={{ paddingLeft: 32 }}>откл.</td>
-                  {row.monthly_plan.map((plan, i) => {
-                    const fact = row.monthly_fact[i]
-                    const diff = fact - plan
-                    return (
-                      <td className="td text-right text-small" key={i} style={{
-                        color: diff > 0 ? 'var(--red)' : diff < 0 ? 'var(--green)' : 'var(--text-3)',
-                        ...(i === new Date().getMonth() && { background: 'var(--border-light)' }),
-                      }}>
-                        {Math.abs(diff) > 0 ? `${diff > 0 ? '+' : ''}${fmt(diff)}` : '—'}
-                      </td>
-                    )
-                  })}
-                  <td className="td text-right text-small" style={{
-                    color: totalFact - totalPlan > 0 ? 'var(--red)' : totalFact - totalPlan < 0 ? 'var(--green)' : undefined,
-                    fontWeight: 600,
-                  }}>
-                    {totalFact - totalPlan !== 0 ? `${totalFact - totalPlan > 0 ? '+' : ''}${fmt(totalFact - totalPlan)}` : '—'}
-                  </td>
-                </tr>,
-              ] : []),
             ]
           })}
         </tbody>
       </table>
-      {rows.length > 0 && (
-        <div className="text-muted text-small" style={{ padding: '8px 12px' }}>
-          Нажмите ▼ рядом с названием чтобы раскрыть план и отклонение.
-        </div>
-      )}
     </div>
   )
 }

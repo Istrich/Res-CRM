@@ -6,14 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     BudgetProject,
-    BudgetProjectMonthPlan,
     BudgetSnapshot,
     Employee,
     EmployeeProject,
     Project,
     SalaryRecord,
 )
-from app.services.budget_plan import get_budget_project_month_plan, get_project_month_plan
+from app.services.budget_plan import get_budget_project_month_plan
 from app.services.calc import (
     batch_employee_month_costs,
     calc_hourly_rate,
@@ -23,7 +22,7 @@ from app.services.calc import (
 
 
 def get_summary(db: Session, year: int) -> dict:
-    """Top-level KPIs: headcount, total spend, monthly fact and plan totals."""
+    """Top-level KPIs: headcount and monthly fact totals."""
     today = date.today()
 
     employees = db.query(Employee).filter(Employee.is_position == False).all()  # noqa: E712
@@ -43,14 +42,6 @@ def get_summary(db: Session, year: int) -> dict:
     )
     monthly_spend = {row[0]: float(row[1]) for row in monthly_rows}
 
-    plan_rows = (
-        db.query(BudgetProjectMonthPlan.month, func.sum(BudgetProjectMonthPlan.amount))
-        .filter(BudgetProjectMonthPlan.year == year)
-        .group_by(BudgetProjectMonthPlan.month)
-        .all()
-    )
-    monthly_plan = {row[0]: float(row[1]) for row in plan_rows}
-
     return {
         "year": year,
         "employee_count": len(employees),
@@ -59,10 +50,6 @@ def get_summary(db: Session, year: int) -> dict:
         "total_spend": sum(monthly_spend.values()),
         "monthly_spend": [
             {"month": m, "amount": monthly_spend.get(m, 0)}
-            for m in range(1, 13)
-        ],
-        "monthly_plan": [
-            {"month": m, "amount": monthly_plan.get(m, 0)}
             for m in range(1, 13)
         ],
     }
@@ -93,7 +80,7 @@ def get_by_project(db: Session, year: int) -> list:
 
 
 def get_by_project_monthly(db: Session, year: int) -> list:
-    """Monthly plan vs fact for each project."""
+    """Monthly fact totals for each project."""
     projects = db.query(Project).all()
 
     all_snapshots = (
@@ -110,18 +97,13 @@ def get_by_project_monthly(db: Session, year: int) -> list:
         monthly_fact = [snap_by_proj_month.get((str(proj.id), m), 0.0) for m in range(1, 13)]
         total_fact = sum(monthly_fact)
 
-        plan_items = get_project_month_plan(db, proj.id, year)
-        monthly_plan = [p["amount"] for p in plan_items] if plan_items else None
-
         result.append({
             "project_id": str(proj.id),
             "project_name": proj.name,
             "budget_project_id": str(proj.budget_project_id) if proj.budget_project_id else None,
             "budget_project_name": proj.budget_project.name if proj.budget_project else None,
             "monthly_fact": monthly_fact,
-            "monthly_plan": monthly_plan,
             "total_fact": round(total_fact, 2),
-            "total_plan": round(sum(monthly_plan), 2) if monthly_plan else None,
         })
 
     result.sort(key=lambda x: x["total_fact"], reverse=True)
@@ -149,10 +131,8 @@ def get_by_budget_project_monthly(db: Session, year: int) -> list:
             sum(snap_by_proj_month.get((pid, m), 0.0) for pid in project_ids)
             for m in range(1, 13)
         ]
-
         plan_items = get_budget_project_month_plan(db, bp.id, year)
         monthly_plan = [p["amount"] for p in plan_items]
-
         monthly_diff = [
             round(monthly_fact[i] - monthly_plan[i], 2)
             for i in range(12)

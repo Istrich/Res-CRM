@@ -33,10 +33,6 @@ export const batchUpsertSalary = (id, data) =>
 // Projects
 export const getProjects = (params) => api.get('/projects', { params }).then(r => r.data)
 export const getProject = (id, params) => api.get(`/projects/${id}`, { params }).then(r => r.data)
-export const getProjectMonthPlan = (id, year) =>
-  api.get(`/projects/${id}/month-plan`, { params: { year } }).then(r => r.data)
-export const putProjectMonthPlan = (id, year, items) =>
-  api.put(`/projects/${id}/month-plan`, { items }, { params: { year } }).then(r => r.data)
 export const createProject = (data) => api.post('/projects', data).then(r => r.data)
 export const updateProject = (id, data) => api.patch(`/projects/${id}`, data).then(r => r.data)
 export const deleteProject = (id) => api.delete(`/projects/${id}`)

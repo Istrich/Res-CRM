@@ -31,12 +31,25 @@ export default function BudgetProjectDetailPage() {
     queryKey: ['budget-project-budget', id, year],
     queryFn: () => getBudgetProjectBudget(id, year),
   })
+  const { data: monthPlanData } = useQuery({
+    queryKey: ['budget-project-month-plan', id, year],
+    queryFn: () => getBudgetProjectMonthPlan(id, year),
+    enabled: Boolean(id && year),
+  })
 
   useEffect(() => {
     if (bp && !editForm) {
       setEditForm({ name: bp.name, year: bp.year, total_budget: bp.total_budget || '' })
     }
   }, [bp])
+  useEffect(() => {
+    if (monthPlanDraft === null && (budget?.monthly_plan?.length || monthPlanData?.items?.length)) {
+      const src = budget?.monthly_plan || monthPlanData?.items || []
+      const arr = Array(12).fill(0)
+      src.forEach(({ month, amount }) => { if (month >= 1 && month <= 12) arr[month - 1] = amount })
+      setMonthPlanDraft(arr)
+    }
+  }, [budget?.monthly_plan, monthPlanData?.items, monthPlanDraft])
 
   const updateMut = useMutation({
     mutationFn: (data) => updateBudgetProject(id, data),
@@ -52,22 +65,6 @@ export default function BudgetProjectDetailPage() {
     onSuccess: () => navigate('/budget-projects'),
     onError: (e) => { alert(e.response?.data?.detail || 'Не удалось удалить') },
   })
-
-  const { data: monthPlanData } = useQuery({
-    queryKey: ['budget-project-month-plan', id, year],
-    queryFn: () => getBudgetProjectMonthPlan(id, year),
-    enabled: Boolean(id && year),
-  })
-
-  useEffect(() => {
-    if (monthPlanDraft === null && (budget?.monthly_plan?.length || monthPlanData?.items?.length)) {
-      const src = budget?.monthly_plan || monthPlanData?.items || []
-      const arr = Array(12).fill(0)
-      src.forEach(({ month, amount }) => { if (month >= 1 && month <= 12) arr[month - 1] = amount })
-      setMonthPlanDraft(arr)
-    }
-  }, [budget?.monthly_plan, monthPlanData?.items])
-
   function distributeEvenly() {
     const total = monthPlanDraft
       ? monthPlanDraft.reduce((s, v) => s + (Number(v) || 0), 0)
@@ -155,7 +152,7 @@ export default function BudgetProjectDetailPage() {
           {MONTHS.map((label, i) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ minWidth: 28, fontSize: 12 }}>{label}</span>
-                <input
+              <input
                 type="number"
                 className="input"
                 style={{ width: 88 }}
@@ -239,11 +236,13 @@ export default function BudgetProjectDetailPage() {
                 <th className="th" style={{ textAlign: 'right' }}>Расход</th>
                 <th className="th" style={{ textAlign: 'right' }}>Прогноз</th>
                 <th className="th" style={{ textAlign: 'right' }}>Остаток</th>
-                <th className="th">Статус</th>
               </tr>
             </thead>
             <tbody>
               {budget.projects.map(p => (
+                (() => {
+                  const remaining = (p?.forecast != null && p?.spent != null) ? (p.forecast - p.spent) : null
+                  return (
                 <tr
                   key={p.project_id}
                   style={{ cursor: 'pointer' }}
@@ -253,18 +252,15 @@ export default function BudgetProjectDetailPage() {
                   <td className="td" style={{ textAlign: 'right' }}>{fmt(p.spent)} ₽</td>
                   <td className="td" style={{ textAlign: 'right' }}>{fmt(p.forecast)} ₽</td>
                   <td className="td" style={{ textAlign: 'right' }}>
-                    {p.remaining != null
-                      ? <span style={{ color: p.remaining < 0 ? 'var(--red)' : 'var(--green)' }}>
-                          {fmt(p.remaining)} ₽
+                    {remaining != null
+                      ? <span style={{ color: remaining < 0 ? 'var(--red)' : 'var(--green)' }}>
+                          {fmt(remaining)} ₽
                         </span>
                       : '—'}
                   </td>
-                  <td className="td">
-                    <span className="badge" style={{ background: statusColor(p.status) + '22', color: statusColor(p.status) }}>
-                      {statusLabel(p.status)}
-                    </span>
-                  </td>
                 </tr>
+                  )
+                })()
               ))}
             </tbody>
           </table>
