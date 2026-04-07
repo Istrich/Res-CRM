@@ -11,6 +11,8 @@ from app.schemas.project import (
     BudgetProjectCreate,
     BudgetProjectMonthPlanIn,
     BudgetProjectMonthPlanOut,
+    BudgetProjectMonthFactForecastOverrideIn,
+    BudgetProjectMonthFactForecastOverrideOut,
     BudgetProjectOut,
     BudgetProjectUpdate,
     BudgetProjectWithStats,
@@ -19,6 +21,8 @@ from app.services.calc import get_budget_project_summary
 from app.services.budget_plan import (
     get_budget_project_month_plan,
     set_budget_project_month_plan,
+    get_budget_project_month_fact_forecast_override_flags,
+    set_budget_project_month_fact_forecast_overrides,
 )
 
 router = APIRouter(prefix="/budget-projects", tags=["budget-projects"])
@@ -106,6 +110,38 @@ def put_budget_project_month_plan(
     items_data = [{"month": x.month, "amount": x.amount} for x in body.items]
     items = set_budget_project_month_plan(db, bp_id, year, items_data)
     return BudgetProjectMonthPlanOut(items=items)
+
+
+@router.get("/{bp_id}/month-fact-forecast", response_model=BudgetProjectMonthFactForecastOverrideOut)
+def get_budget_project_month_fact_forecast_overrides_route(
+    bp_id: uuid.UUID,
+    year: int = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    bp = db.query(BudgetProject).filter(BudgetProject.id == bp_id).first()
+    if not bp:
+        raise HTTPException(status_code=404, detail="Budget project not found")
+
+    items = get_budget_project_month_fact_forecast_override_flags(db, bp_id, year)
+    return BudgetProjectMonthFactForecastOverrideOut(items=items)
+
+
+@router.put("/{bp_id}/month-fact-forecast", response_model=BudgetProjectMonthFactForecastOverrideOut)
+def put_budget_project_month_fact_forecast_overrides_route(
+    bp_id: uuid.UUID,
+    year: int = Query(...),
+    body: BudgetProjectMonthFactForecastOverrideIn = ...,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    bp = db.query(BudgetProject).filter(BudgetProject.id == bp_id).first()
+    if not bp:
+        raise HTTPException(status_code=404, detail="Budget project not found")
+
+    items_data = [{"month": it.month, "amount": it.amount} for it in body.items]
+    items = set_budget_project_month_fact_forecast_overrides(db, bp_id, year, items_data)
+    return BudgetProjectMonthFactForecastOverrideOut(items=items)
 
 
 @router.get("/{bp_id}", response_model=BudgetProjectWithStats)

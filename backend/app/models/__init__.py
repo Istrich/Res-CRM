@@ -45,6 +45,11 @@ class BudgetProject(Base):
     month_plans: Mapped[list["BudgetProjectMonthPlan"]] = relationship(
         "BudgetProjectMonthPlan", back_populates="budget_project", cascade="all, delete-orphan"
     )
+    fact_forecast_overrides: Mapped[list["BudgetProjectMonthFactForecastOverride"]] = relationship(
+        "BudgetProjectMonthFactForecastOverride",
+        back_populates="budget_project",
+        cascade="all, delete-orphan",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +72,35 @@ class BudgetProjectMonthPlan(Base):
     amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
 
     budget_project: Mapped["BudgetProject"] = relationship("BudgetProject", back_populates="month_plans")
+
+
+# ---------------------------------------------------------------------------
+# BudgetProjectMonthFactForecastOverride — manual override for "fact/forecast" per month
+# ---------------------------------------------------------------------------
+
+
+class BudgetProjectMonthFactForecastOverride(Base):
+    __tablename__ = "budget_project_month_fact_forecast_overrides"
+    __table_args__ = (
+        UniqueConstraint(
+            "budget_project_id",
+            "year",
+            "month",
+            name="uq_bp_month_fact_forecast_override",
+        ),
+        CheckConstraint("month BETWEEN 1 AND 12", name="chk_month_fact_forecast_override_1_12"),
+        CheckConstraint("amount >= 0", name="chk_month_fact_forecast_override_non_negative"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    budget_project_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("budget_projects.id", ondelete="CASCADE"), nullable=False
+    )
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+
+    budget_project: Mapped["BudgetProject"] = relationship("BudgetProject", back_populates="fact_forecast_overrides")
 
 
 # ---------------------------------------------------------------------------

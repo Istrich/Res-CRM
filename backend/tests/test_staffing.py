@@ -195,6 +195,30 @@ class TestStaffersAPI:
         assert "В2024" in names_2024
         assert "В2025" not in names_2024
 
+    def test_list_staffers_uses_month_rate_override_when_present(self, authed_client):
+        s_override = authed_client.post("/staffing/staffers", json={
+            "last_name": "RateOverride",
+            "hourly_rate": 1000.0,
+            "valid_from": "2024-01-01",
+        }).json()
+        s_base = authed_client.post("/staffing/staffers", json={
+            "last_name": "NoOverride",
+            "hourly_rate": 2000.0,
+            "valid_from": "2024-01-01",
+        }).json()
+
+        authed_client.put(
+            f"/staffing/staffers/{s_override['id']}/month-rates/2024/3",
+            json={"hourly_rate": 555.0},
+        )
+
+        r = authed_client.get("/staffing/staffers", params={"year": 2024, "month": 3})
+        rows = r.json()
+        by_last_name = {x["last_name"]: x for x in rows}
+
+        assert by_last_name["RateOverride"]["hourly_rate"] == 555.0
+        assert by_last_name["NoOverride"]["hourly_rate"] == 2000.0
+
     def test_requires_auth(self, client):
         r = client.get("/staffing/staffers")
         assert r.status_code == 401

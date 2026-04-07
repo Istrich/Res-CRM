@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     BudgetProject,
     BudgetProjectMonthPlan,
+    BudgetProjectMonthFactForecastOverride,
     BudgetSnapshot,
     Project,
     ProjectMonthPlan,
@@ -76,16 +77,28 @@ def set_budget_project_month_plan(
 
 def get_budget_project_month_fact(db: Session, budget_project_id, year: int) -> list[dict]:
     """
-    Aggregate monthly amounts from BudgetSnapshot for all projects in this budget project.
-    Returns 12 items {month, amount} (fact: sum of amount where is_forecast=False per month).
+    Aggregate monthly amounts from BudgetSnapshot for all projects in this budget project,
+    then apply manual overrides (fact/forecast) per month when present.
+
+    Returns 12 items {month, amount}.
     """
     bp = db.get(BudgetProject, budget_project_id)
     if not bp:
         return [{"month": m, "amount": 0.0} for m in range(1, 13)]
 
+    overrides = (
+        db.query(BudgetProjectMonthFactForecastOverride)
+        .filter(
+            BudgetProjectMonthFactForecastOverride.budget_project_id == budget_project_id,
+            BudgetProjectMonthFactForecastOverride.year == year,
+        )
+        .all()
+    )
+    override_by_month = {r.month: float(r.amount) for r in overrides}
+
     project_ids = [p.id for p in bp.projects]
     if not project_ids:
-        return [{"month": m, "amount": 0.0} for m in range(1, 13)]
+        return [{"month": m, "amount": override_by_month.get(m, 0.0)} for m in range(1, 13)]
 
     # Sum amount per month (all snapshots: fact + forecast) for comparison with plan
     from sqlalchemy import func
@@ -100,7 +113,103 @@ def get_budget_project_month_fact(db: Session, budget_project_id, year: int) -> 
         .all()
     )
     by_month = {r.month: float(r.total) for r in rows}
-    return [{"month": m, "amount": by_month.get(m, 0.0)} for m in range(1, 13)]
+    return [{"month": m, "amount": override_by_month.get(m, by_month.get(m, 0.0))} for m in range(1, 13)]
+
+
+def get_budget_project_month_fact_forecast_override_flags(
+    db: Session,
+    budget_project_id,
+    year: int,
+) -> list[dict]:
+    """
+    Return 12 items {month, amount, is_manual} where amount is the effective
+    (override if present, else auto from BudgetSnapshot).
+    """
+    effective = get_budget_project_month_fact(db, budget_project_id, year)
+    overrides = (
+        db.query(BudgetProjectMonthFactForecastOverride)
+        .filter(
+            BudgetProjectMonthFactForecastOverride.budget_project_id == budget_project_id,
+            BudgetProjectMonthFactForecastOverride.year == year,
+        )
+        .all()
+    )
+    override_months = {r.month for r in overrides}
+
+    return [
+        {"month": item["month"], "amount": item["amount"], "is_manual": item["month"] in override_months}
+        for item in effective
+    ]
+
+
+def set_budget_project_month_fact_forecast_overrides(
+    db: Session,
+    budget_project_id,
+    year: int,
+    items: list[dict],
+) -> list[dict]:
+    """
+    Upsert/delete manual per-month fact/forecast overrides.
+
+    items: list of {month: int, amount: float|None}. amount=None means delete override.
+    Returns the updated 12 items with {month, amount, is_manual}.
+    """
+    bp = db.get(BudgetProject, budget_project_id)
+    if not bp:
+        return []
+
+    # Validate/normalize input
+    normalized: dict[int, float | None] = {}
+    for it in items:
+        m = it.get("month")
+        if not isinstance(m, int) or not (1 <= m <= 12):
+            continue
+        amt = it.get("amount", None)
+        if amt is None:
+            normalized[m] = None
+        else:
+            try:
+                val = float(amt)
+            except (TypeError, ValueError):
+                continue
+            if val < 0:
+                continue
+            normalized[m] = val
+
+    existing_rows = (
+        db.query(BudgetProjectMonthFactForecastOverride)
+        .filter(
+            BudgetProjectMonthFactForecastOverride.budget_project_id == budget_project_id,
+            BudgetProjectMonthFactForecastOverride.year == year,
+        )
+        .all()
+    )
+    by_month_row = {r.month: r for r in existing_rows}
+
+    for m in range(1, 13):
+        if m not in normalized:
+            continue
+
+        row = by_month_row.get(m)
+        desired = normalized[m]
+        if desired is None:
+            if row is not None:
+                db.delete(row)
+        else:
+            if row is None:
+                db.add(
+                    BudgetProjectMonthFactForecastOverride(
+                        budget_project_id=budget_project_id,
+                        year=year,
+                        month=m,
+                        amount=desired,
+                    )
+                )
+            else:
+                row.amount = desired
+
+    db.commit()
+    return get_budget_project_month_fact_forecast_override_flags(db, budget_project_id, year)
 
 
 def get_project_own_month_plan(db: Session, project_id, year: int) -> list[dict] | None:

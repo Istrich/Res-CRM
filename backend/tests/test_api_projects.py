@@ -117,6 +117,38 @@ class TestBudgetProjectMonthPlan:
 
 
 # ---------------------------------------------------------------------------
+# BudgetProject Month Fact/Forecast Overrides
+# ---------------------------------------------------------------------------
+class TestBudgetProjectMonthFactForecast:
+    """GET/PUT /budget-projects/{id}/month-fact-forecast?year=..."""
+
+    def test_get_month_fact_forecast_404(self, authed_client):
+        r = authed_client.get(f"/budget-projects/{uuid.uuid4()}/month-fact-forecast?year=2024")
+        assert r.status_code == 404
+
+    def test_put_month_fact_forecast_creates_override(self, authed_client, make_budget_project):
+        bp = make_budget_project(year=2024)
+        r = authed_client.put(
+            f"/budget-projects/{bp.id}/month-fact-forecast?year=2024",
+            json={"items": [{"month": 3, "amount": 123.0}]},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert "items" in data
+        assert data["items"][2]["month"] == 3
+        assert data["items"][2]["amount"] == 123.0
+        assert data["items"][2]["is_manual"] is True
+
+    def test_put_month_fact_forecast_validation(self, authed_client, make_budget_project):
+        bp = make_budget_project(year=2024)
+        r = authed_client.put(
+            f"/budget-projects/{bp.id}/month-fact-forecast?year=2024",
+            json={"items": [{"month": 13, "amount": 1.0}]},
+        )
+        assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
 # Projects
 # ---------------------------------------------------------------------------
 
@@ -343,6 +375,35 @@ class TestBudgetsAPI:
         assert len(data["monthly_plan"]) == 12
         assert len(data["monthly_fact"]) == 12
         assert len(data["monthly_diff"]) == 12
+
+    @freeze_time("2024-06-15")
+    def test_budget_project_manual_fact_forecast_overrides_affect_totals(
+        self,
+        authed_client,
+        make_budget_project,
+    ):
+        bp = make_budget_project(year=2024, total_budget=2500.0)
+
+        r_put = authed_client.put(
+            f"/budget-projects/{bp.id}/month-fact-forecast?year=2024",
+            json={"items": [{"month": 3, "amount": 1000.0}, {"month": 7, "amount": 2000.0}]},
+        )
+        assert r_put.status_code == 200
+
+        r = authed_client.get(f"/budgets/budget-projects/{bp.id}?year=2024")
+        assert r.status_code == 200
+        data = r.json()
+
+        assert data["spent"] == pytest.approx(1000.0)
+        assert data["forecast"] == pytest.approx(3000.0)
+        assert data["remaining"] == pytest.approx(-500.0)
+        assert data["status"] == "overrun"
+
+        monthly_fact = data["monthly_fact"]
+        assert monthly_fact[2]["month"] == 3
+        assert monthly_fact[2]["amount"] == pytest.approx(1000.0)
+        assert monthly_fact[6]["month"] == 7
+        assert monthly_fact[6]["amount"] == pytest.approx(2000.0)
 
     @freeze_time("2024-06-15")
     def test_budget_overview(self, authed_client, full_setup):

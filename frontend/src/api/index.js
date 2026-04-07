@@ -50,6 +50,16 @@ export const getBudgetProjectMonthPlan = (id, year) =>
   api.get(`/budget-projects/${id}/month-plan`, { params: { year } }).then(r => r.data)
 export const putBudgetProjectMonthPlan = (id, year, items) =>
   api.put(`/budget-projects/${id}/month-plan`, { items }, { params: { year } }).then(r => r.data)
+
+export const getBudgetProjectMonthFactForecast = (id, year) =>
+  api
+    .get(`/budget-projects/${id}/month-fact-forecast`, { params: { year } })
+    .then(r => r.data)
+
+export const putBudgetProjectMonthFactForecast = (id, year, items) =>
+  api
+    .put(`/budget-projects/${id}/month-fact-forecast`, { items }, { params: { year } })
+    .then(r => r.data)
 export const createBudgetProject = (data) => api.post('/budget-projects', data).then(r => r.data)
 export const updateBudgetProject = (id, data) => api.patch(`/budget-projects/${id}`, data).then(r => r.data)
 export const deleteBudgetProject = (id) => api.delete(`/budget-projects/${id}`)

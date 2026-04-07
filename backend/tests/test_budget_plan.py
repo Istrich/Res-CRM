@@ -6,7 +6,9 @@ from app.services.budget_plan import (
     get_budget_project_month_plan,
     get_project_month_plan,
     get_project_own_month_plan,
+    get_budget_project_month_fact_forecast_override_flags,
     set_budget_project_month_plan,
+    set_budget_project_month_fact_forecast_overrides,
     set_project_own_month_plan,
 )
 
@@ -74,3 +76,23 @@ class TestBudgetPlanService:
         fact = get_budget_project_month_fact(db, bp.id, 2024)
         assert len(fact) == 12
         assert all(f["amount"] == 0 for f in fact)
+
+    def test_get_budget_project_month_fact_uses_manual_override_when_present(self, db, make_budget_project):
+        bp = make_budget_project(year=2024)
+
+        set_budget_project_month_fact_forecast_overrides(
+            db,
+            bp.id,
+            2024,
+            items=[{"month": 3, "amount": 555.0}],
+        )
+
+        fact = get_budget_project_month_fact(db, bp.id, 2024)
+        assert len(fact) == 12
+        assert fact[2]["month"] == 3
+        assert fact[2]["amount"] == 555.0
+        assert all(f["amount"] == 0 for f in (fact[:2] + fact[3:]))
+
+        flags = get_budget_project_month_fact_forecast_override_flags(db, bp.id, 2024)
+        assert flags[2]["is_manual"] is True
+        assert all(not x["is_manual"] for i, x in enumerate(flags) if i != 2)

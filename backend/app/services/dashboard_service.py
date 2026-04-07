@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     BudgetProject,
+    BudgetProjectMonthFactForecastOverride,
     BudgetSnapshot,
     Employee,
     EmployeeProject,
@@ -113,6 +114,7 @@ def get_by_project_monthly(db: Session, year: int) -> list:
 def get_by_budget_project_monthly(db: Session, year: int) -> list:
     """Monthly plan vs fact for each budget project."""
     bps = db.query(BudgetProject).filter(BudgetProject.year == year).all()
+    bp_ids = [bp.id for bp in bps]
 
     all_snapshots = (
         db.query(BudgetSnapshot)
@@ -123,12 +125,29 @@ def get_by_budget_project_monthly(db: Session, year: int) -> list:
     for s in all_snapshots:
         snap_by_proj_month[(str(s.project_id), s.month)] = float(s.amount)
 
+    override_by_bp_month: dict[tuple, float] = {}
+    if bp_ids:
+        overrides = (
+            db.query(BudgetProjectMonthFactForecastOverride)
+            .filter(
+                BudgetProjectMonthFactForecastOverride.year == year,
+                BudgetProjectMonthFactForecastOverride.budget_project_id.in_(bp_ids),
+            )
+            .all()
+        )
+        for r in overrides:
+            override_by_bp_month[(str(r.budget_project_id), r.month)] = float(r.amount)
+
     result = []
     for bp in bps:
         project_ids = [str(p.id) for p in bp.projects]
 
-        monthly_fact = [
+        monthly_fact_auto = [
             sum(snap_by_proj_month.get((pid, m), 0.0) for pid in project_ids)
+            for m in range(1, 13)
+        ]
+        monthly_fact = [
+            override_by_bp_month.get((str(bp.id), m), monthly_fact_auto[m - 1])
             for m in range(1, 13)
         ]
         plan_items = get_budget_project_month_plan(db, bp.id, year)

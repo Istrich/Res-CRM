@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getBudgetProject, updateBudgetProject, deleteBudgetProject,
   getBudgetProjectBudget, getBudgetProjectMonthPlan, putBudgetProjectMonthPlan,
+  getBudgetProjectMonthFactForecast, putBudgetProjectMonthFactForecast,
 } from '../api'
 import { useYearStore } from '../store/year'
 import { fmt, MONTHS, statusLabel, statusColor } from '../utils'
@@ -21,6 +22,10 @@ export default function BudgetProjectDetailPage() {
   const [editForm, setEditForm] = useState(null)
   const [monthPlanDraft, setMonthPlanDraft] = useState(null) // [a1..a12] or null
   const [monthPlanSaving, setMonthPlanSaving] = useState(false)
+  const [factForecastEditMode, setFactForecastEditMode] = useState(false)
+  const [monthFactDraft, setMonthFactDraft] = useState(null) // [a1..a12] or null
+  const [monthFactTouched, setMonthFactTouched] = useState(Array(12).fill(false))
+  const [monthFactSaving, setMonthFactSaving] = useState(false)
 
   const { data: bp, isLoading: bpLoading } = useQuery({
     queryKey: ['budget-project', id, year],
@@ -37,6 +42,12 @@ export default function BudgetProjectDetailPage() {
     enabled: Boolean(id && year),
   })
 
+  const { data: monthFactForecastData } = useQuery({
+    queryKey: ['budget-project-month-fact-forecast', id, year],
+    queryFn: () => getBudgetProjectMonthFactForecast(id, year),
+    enabled: Boolean(id && year && factForecastEditMode),
+  })
+
   useEffect(() => {
     if (bp && !editForm) {
       setEditForm({ name: bp.name, year: bp.year, total_budget: bp.total_budget || '' })
@@ -50,6 +61,14 @@ export default function BudgetProjectDetailPage() {
       setMonthPlanDraft(arr)
     }
   }, [budget?.monthly_plan, monthPlanData?.items, monthPlanDraft])
+
+  useEffect(() => {
+    if (!factForecastEditMode) return
+    const items = monthFactForecastData?.items
+    if (!Array.isArray(items) || items.length !== 12) return
+    setMonthFactDraft(items.map(it => String(it.amount)))
+    setMonthFactTouched(Array(12).fill(false))
+  }, [factForecastEditMode, monthFactForecastData?.items])
 
   const updateMut = useMutation({
     mutationFn: (data) => updateBudgetProject(id, data),
@@ -89,6 +108,41 @@ export default function BudgetProjectDetailPage() {
       alert(e.response?.data?.detail || 'Не удалось сохранить план')
     } finally {
       setMonthPlanSaving(false)
+    }
+  }
+
+  async function saveMonthFactForecast() {
+    if (!monthFactDraft || monthFactDraft.length !== 12) return
+    if (!monthFactForecastData?.items || monthFactForecastData.items.length !== 12) return
+
+    setMonthFactSaving(true)
+    try {
+      const items = monthFactDraft.map((v, i) => {
+        const initial = monthFactForecastData.items[i]
+        const touched = monthFactTouched[i]
+        const parsed = v === '' ? 0 : Number(v)
+
+        if (touched) {
+          return { month: i + 1, amount: Number.isFinite(parsed) ? parsed : 0 }
+        }
+
+        if (initial?.is_manual) {
+          return { month: i + 1, amount: initial.amount }
+        }
+
+        // Keep auto-calculated value by not creating manual override.
+        return { month: i + 1, amount: null }
+      })
+
+      await putBudgetProjectMonthFactForecast(id, year, items)
+
+      qc.invalidateQueries({ queryKey: ['budget-project-budget', id, year] })
+      qc.invalidateQueries({ queryKey: ['budget-project-month-fact-forecast', id, year] })
+    } catch (e) {
+      alert(e.response?.data?.detail || 'Не удалось сохранить факт/прогноз')
+    } finally {
+      setMonthFactSaving(false)
+      setFactForecastEditMode(false)
     }
   }
 
@@ -180,6 +234,86 @@ export default function BudgetProjectDetailPage() {
         </div>
       </div>
 
+      {/* Manual Fact/Forecast override */}
+      <div className="card" style={{ padding: '16px 20px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div>
+            <div className="fw-600" style={{ marginBottom: 4 }}>Факт / прогноз по месяцам</div>
+            <div className="text-muted text-small" style={{ marginBottom: 0 }}>
+              {factForecastEditMode ? 'Введите значения вручную — они заменят автосчёт.' : 'Значения берутся из расчёта. Можно переключиться на ручной ввод.'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setFactForecastEditMode(v => !v)}
+            >
+              {factForecastEditMode ? 'Закрыть' : 'Редактировать'}
+            </button>
+            {factForecastEditMode && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={saveMonthFactForecast}
+                disabled={monthFactSaving}
+              >
+                {monthFactSaving ? <span className="spinner" /> : 'Сохранить'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {!factForecastEditMode ? (
+          <div className="overflow-table">
+            <table>
+              <thead>
+                <tr>
+                  <th className="th">Месяц</th>
+                  <th className="th text-right">Факт / прогноз</th>
+                </tr>
+              </thead>
+              <tbody>
+                {budget?.monthly_fact?.map((f, i) => (
+                  <tr key={i}>
+                    <td className="td" style={{ fontWeight: 500 }}>{MONTHS[i]}</td>
+                    <td className="td text-right fw-600">{fmt(f.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            {MONTHS.map((label, i) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ minWidth: 28, fontSize: 12 }}>{label}</span>
+                <input
+                  type="number"
+                  className="input"
+                  style={{ width: 88 }}
+                  value={monthFactDraft?.[i] ?? ''}
+                  onChange={e => {
+                    const v = e.target.value
+                    setMonthFactDraft(prev => {
+                      const base = prev || Array(12).fill('0')
+                      const arr = [...base]
+                      arr[i] = v
+                      return arr
+                    })
+                    setMonthFactTouched(prev => {
+                      const arr = [...prev]
+                      arr[i] = true
+                      return arr
+                    })
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Plan vs Fact by month */}
       {budget?.monthly_diff && budget.monthly_diff.length > 0 && (
         <div className="card" style={{ padding: '16px 20px', marginBottom: 20 }}>
@@ -203,7 +337,7 @@ export default function BudgetProjectDetailPage() {
                 </tr>
                 <tr>
                   <td className="td fw-500">Факт / прогноз</td>
-                  {budget.monthly_fact?.map(f => (
+                  {budget?.monthly_fact?.map(f => (
                     <td className="td text-right" key={f.month}>{fmt(f.amount)}</td>
                   ))}
                   <td className="td text-right fw-600">{fmt(budget.forecast)}</td>

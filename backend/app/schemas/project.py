@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class BudgetProjectCreate(BaseModel):
@@ -48,6 +48,25 @@ class BudgetProjectMonthPlanIn(BaseModel):
 
 class BudgetProjectMonthPlanOut(BaseModel):
     items: list[BudgetMonthItem]
+
+
+class BudgetProjectMonthFactForecastOverrideItemIn(BaseModel):
+    month: int = Field(..., ge=1, le=12)
+    amount: Optional[float] = Field(None, ge=0)
+
+
+class BudgetProjectMonthFactForecastOverrideIn(BaseModel):
+    items: list[BudgetProjectMonthFactForecastOverrideItemIn]
+
+
+class BudgetProjectMonthFactForecastOverrideItemOut(BaseModel):
+    month: int = Field(..., ge=1, le=12)
+    amount: float
+    is_manual: bool
+
+
+class BudgetProjectMonthFactForecastOverrideOut(BaseModel):
+    items: list[BudgetProjectMonthFactForecastOverrideItemOut]
 
 
 class ProjectCreate(BaseModel):
