@@ -320,9 +320,18 @@ def list_staffers(
     project_id: Optional[uuid.UUID] = Query(None),
     contractor_id: Optional[uuid.UUID] = Query(None),
     year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
+    from datetime import date as _date
+
+    today = _date.today()
+    effective_year = year if year is not None else today.year
+    effective_month = month if month is not None else today.month
+    if not 1 <= effective_month <= 12:
+        raise HTTPException(status_code=422, detail="Month must be between 1 and 12")
+
     q = (
         db.query(Staffer)
         .options(
@@ -335,9 +344,7 @@ def list_staffers(
         q = q.filter(Staffer.project_id == project_id)
     if contractor_id:
         q = q.filter(Staffer.contractor_id == contractor_id)
-    if year:
-        from datetime import date as _date
-        import calendar as _cal
+    if year is not None:
         year_start = _date(year, 1, 1)
         year_end = _date(year, 12, 31)
         q = q.filter(
@@ -345,7 +352,29 @@ def list_staffers(
             (Staffer.valid_to == None) | (Staffer.valid_to >= year_start),  # noqa: E711
         )
     staffers = q.order_by(Staffer.last_name, Staffer.first_name).all()
-    return [build_staffer_out(s) for s in staffers]
+
+    staffer_ids = [s.id for s in staffers]
+    month_rates = []
+    if staffer_ids:
+        month_rates = (
+            db.query(StafferMonthRate)
+            .filter(
+                StafferMonthRate.staffer_id.in_(staffer_ids),
+                StafferMonthRate.year == effective_year,
+                StafferMonthRate.month == effective_month,
+            )
+            .all()
+        )
+    rate_by_staffer_id = {r.staffer_id: float(r.hourly_rate) for r in month_rates}
+
+    result = []
+    for s in staffers:
+        out = build_staffer_out(s)
+        override = rate_by_staffer_id.get(s.id)
+        if override is not None:
+            out["hourly_rate"] = override
+        result.append(out)
+    return result
 
 
 @router.post("/staffers", response_model=StafferOut, status_code=status.HTTP_201_CREATED)

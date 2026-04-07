@@ -14,7 +14,7 @@ const EMPTY_FORM = {
 }
 
 export default function StaffersTab() {
-  const { year } = useYearStore()
+  const { year, month } = useYearStore()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [showModal, setShowModal] = useState(false)
@@ -22,8 +22,8 @@ export default function StaffersTab() {
   const [form, setForm] = useState(EMPTY_FORM)
 
   const { data: staffers = [], isLoading } = useQuery({
-    queryKey: ['staffers', { year }],
-    queryFn: () => getStaffers({ year }),
+    queryKey: ['staffers', { year, month }],
+    queryFn: () => getStaffers({ year, month }),
   })
   const { data: projects = [] } = useQuery({ queryKey: ['projects-list'], queryFn: () => getProjects() })
   const { data: contractors = [] } = useQuery({ queryKey: ['contractors-list'], queryFn: getContractors })

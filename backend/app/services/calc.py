@@ -30,6 +30,7 @@ from app.models import (
     AssignmentMonthRate,
     BudgetProject,
     BudgetSnapshot,
+    BudgetProjectMonthFactForecastOverride,
     Employee,
     EmployeeProject,
     Project,
@@ -426,18 +427,68 @@ def get_project_budget_summary(
 
 
 def get_budget_project_summary(db: Session, budget_project_id, year: int) -> dict:
-    """Aggregate budget summary across all projects in a budget project."""
+    """Aggregate spent/forecast across all projects in a budget project, with manual overrides."""
+    from sqlalchemy import func
+
     bp = db.get(BudgetProject, budget_project_id)
     if not bp:
         return {}
 
-    total_spent = 0.0
-    total_forecast = 0.0
+    project_ids = [p.id for p in bp.projects]
 
-    for project in bp.projects:
-        summary = get_project_budget_summary(db, project.id, year)
-        total_spent += summary["spent"]
-        total_forecast += summary["forecast"]
+    # Auto: split by snapshot.is_forecast (spent vs forecast months)
+    auto_spent_by_month: dict[int, float] = {}
+    auto_forecast_by_month: dict[int, float] = {}
+    month_is_forecast: dict[int, bool] = {}
+    if project_ids:
+        rows = (
+            db.query(BudgetSnapshot.month, BudgetSnapshot.is_forecast, func.sum(BudgetSnapshot.amount).label("total"))
+            .filter(
+                BudgetSnapshot.project_id.in_(project_ids),
+                BudgetSnapshot.year == year,
+            )
+            .group_by(BudgetSnapshot.month, BudgetSnapshot.is_forecast)
+            .all()
+        )
+        for m, is_fc, total in rows:
+            if is_fc:
+                auto_forecast_by_month[int(m)] = float(total)
+            else:
+                auto_spent_by_month[int(m)] = float(total)
+            # For each month is_forecast should be consistent across projects.
+            month_is_forecast[int(m)] = bool(is_fc)
+
+    # Manual overrides: replace monthly total (spent/forecast split depends on snapshot classification if available)
+    overrides = (
+        db.query(BudgetProjectMonthFactForecastOverride)
+        .filter(
+            BudgetProjectMonthFactForecastOverride.budget_project_id == budget_project_id,
+            BudgetProjectMonthFactForecastOverride.year == year,
+        )
+        .all()
+    )
+    override_by_month = {r.month: float(r.amount) for r in overrides}
+
+    today = date.today()
+    spent_total = 0.0
+    forecast_month_total = 0.0
+
+    for m in range(1, 13):
+        override_amount = override_by_month.get(m)
+        if override_amount is not None:
+            is_fc = month_is_forecast.get(m)
+            if is_fc is None:
+                # Fallback when budget has no snapshots yet.
+                is_fc = (year > today.year) or (year == today.year and m >= today.month)
+            if is_fc:
+                forecast_month_total += override_amount
+            else:
+                spent_total += override_amount
+        else:
+            spent_total += auto_spent_by_month.get(m, 0.0)
+            forecast_month_total += auto_forecast_by_month.get(m, 0.0)
+
+    total_forecast = spent_total + forecast_month_total
 
     budget = float(bp.total_budget) if bp.total_budget else None
     remaining = (budget - total_forecast) if budget is not None else None
@@ -450,7 +501,7 @@ def get_budget_project_summary(db: Session, budget_project_id, year: int) -> dic
             status = "warning"
 
     return {
-        "spent": round(total_spent, 2),
+        "spent": round(spent_total, 2),
         "forecast": round(total_forecast, 2),
         "remaining": round(remaining, 2) if remaining is not None else None,
         "status": status,
