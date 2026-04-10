@@ -36,6 +36,9 @@ from app.models import (
     Project,
     ProjectMonthPlan,
     SalaryRecord,
+    Staffer,
+    StafferMonthExpense,
+    StaffingExpense,
     WorkingHoursYearMonth,
 )
 
@@ -293,6 +296,101 @@ def calc_project_month_cost(db: Session, project_id, year: int, month: int) -> f
     return round(total, 2)
 
 
+def _get_staffing_fact_by_project_month(
+    db: Session,
+    year: int,
+    project_ids: list | None = None,
+) -> dict[tuple, float]:
+    """Return {(project_id, month): staffing_fact} for year.
+
+    Anti-double-count rule inside staffing sources:
+    - Prefer per-staffer факты (`StafferMonthExpense.actual_amount`) when present.
+    - Use `StaffingExpense.fact_amount` only for project-month pairs missing in per-staffer facts.
+    """
+    from sqlalchemy import func
+
+    staffer_rows_q = (
+        db.query(
+            Staffer.project_id.label("project_id"),
+            StafferMonthExpense.month.label("month"),
+            func.sum(StafferMonthExpense.actual_amount).label("total"),
+        )
+        .join(Staffer, Staffer.id == StafferMonthExpense.staffer_id)
+        .filter(
+            Staffer.project_id.isnot(None),
+            StafferMonthExpense.year == year,
+            StafferMonthExpense.actual_amount.isnot(None),
+        )
+        .group_by(Staffer.project_id, StafferMonthExpense.month)
+    )
+    if project_ids is not None:
+        if not project_ids:
+            return {}
+        staffer_rows_q = staffer_rows_q.filter(Staffer.project_id.in_(project_ids))
+    staffer_rows = staffer_rows_q.all()
+
+    by_key: dict[tuple, float] = {
+        (r.project_id, int(r.month)): float(r.total or 0.0)
+        for r in staffer_rows
+    }
+
+    expense_rows_q = (
+        db.query(
+            StaffingExpense.project_id.label("project_id"),
+            StaffingExpense.month.label("month"),
+            func.sum(StaffingExpense.fact_amount).label("total"),
+        )
+        .filter(
+            StaffingExpense.project_id.isnot(None),
+            StaffingExpense.year == year,
+            StaffingExpense.fact_amount.isnot(None),
+        )
+        .group_by(StaffingExpense.project_id, StaffingExpense.month)
+    )
+    if project_ids is not None:
+        expense_rows_q = expense_rows_q.filter(StaffingExpense.project_id.in_(project_ids))
+    expense_rows = expense_rows_q.all()
+
+    for r in expense_rows:
+        key = (r.project_id, int(r.month))
+        if key in by_key:
+            continue
+        by_key[key] = float(r.total or 0.0)
+
+    return by_key
+
+
+def get_project_monthly_postcalc(db: Session, project_id, year: int) -> list[dict]:
+    """Monthly postcalc amount = BudgetSnapshot + staffing fact for project."""
+    snapshots = (
+        db.query(BudgetSnapshot)
+        .filter(BudgetSnapshot.project_id == project_id, BudgetSnapshot.year == year)
+        .all()
+    )
+    snap_by_month = {s.month: s for s in snapshots}
+    staffing_by_key = _get_staffing_fact_by_project_month(db, year, [project_id])
+
+    today = date.today()
+    result = []
+    for month in range(1, 13):
+        snap = snap_by_month.get(month)
+        payroll_amount = float(snap.amount) if snap else 0.0
+        staffing_amount = staffing_by_key.get((project_id, month), 0.0)
+        is_forecast = (
+            bool(snap.is_forecast) if snap is not None
+            else (year > today.year or (year == today.year and month >= today.month))
+        )
+        result.append({
+            "month": month,
+            "amount": round(payroll_amount + staffing_amount, 2),
+            "is_forecast": is_forecast,
+            "calculated_at": snap.calculated_at if snap else None,
+            "payroll_amount": round(payroll_amount, 2),
+            "staffing_amount": round(staffing_amount, 2),
+        })
+    return result
+
+
 def recalculate_year(db: Session, year: int) -> dict:
     """
     Recalculate all budget snapshots for a given year.
@@ -377,14 +475,9 @@ def get_project_budget_summary(
     """Return spent, forecast, remaining, status for a project.
     If project is passed, avoids extra SELECT for budget_project.
     """
-    snapshots = (
-        db.query(BudgetSnapshot)
-        .filter(BudgetSnapshot.project_id == project_id, BudgetSnapshot.year == year)
-        .all()
-    )
-
-    spent = sum(float(s.amount) for s in snapshots if not s.is_forecast)
-    forecast_months = sum(float(s.amount) for s in snapshots if s.is_forecast)
+    monthly = get_project_monthly_postcalc(db, project_id, year)
+    spent = sum(float(s["amount"]) for s in monthly if not s["is_forecast"])
+    forecast_months = sum(float(s["amount"]) for s in monthly if s["is_forecast"])
     total_forecast = spent + forecast_months
 
     if project is None:
@@ -415,7 +508,7 @@ def get_project_budget_summary(
         elif total_forecast > budget * 0.9:
             status = "warning"
 
-    last_calc = max((s.calculated_at for s in snapshots), default=None)
+    last_calc = max((s["calculated_at"] for s in monthly), default=None)
 
     return {
         "spent": round(spent, 2),
@@ -428,35 +521,19 @@ def get_project_budget_summary(
 
 def get_budget_project_summary(db: Session, budget_project_id, year: int) -> dict:
     """Aggregate spent/forecast across all projects in a budget project, with manual overrides."""
-    from sqlalchemy import func
-
     bp = db.get(BudgetProject, budget_project_id)
     if not bp:
         return {}
 
     project_ids = [p.id for p in bp.projects]
 
-    # Auto: split by snapshot.is_forecast (spent vs forecast months)
-    auto_spent_by_month: dict[int, float] = {}
-    auto_forecast_by_month: dict[int, float] = {}
+    auto_by_month: dict[int, float] = {m: 0.0 for m in range(1, 13)}
     month_is_forecast: dict[int, bool] = {}
-    if project_ids:
-        rows = (
-            db.query(BudgetSnapshot.month, BudgetSnapshot.is_forecast, func.sum(BudgetSnapshot.amount).label("total"))
-            .filter(
-                BudgetSnapshot.project_id.in_(project_ids),
-                BudgetSnapshot.year == year,
-            )
-            .group_by(BudgetSnapshot.month, BudgetSnapshot.is_forecast)
-            .all()
-        )
-        for m, is_fc, total in rows:
-            if is_fc:
-                auto_forecast_by_month[int(m)] = float(total)
-            else:
-                auto_spent_by_month[int(m)] = float(total)
-            # For each month is_forecast should be consistent across projects.
-            month_is_forecast[int(m)] = bool(is_fc)
+    for pid in project_ids:
+        for row in get_project_monthly_postcalc(db, pid, year):
+            month = int(row["month"])
+            auto_by_month[month] += float(row["amount"])
+            month_is_forecast[month] = bool(row["is_forecast"])
 
     # Manual overrides: replace monthly total (spent/forecast split depends on snapshot classification if available)
     overrides = (
@@ -485,8 +562,14 @@ def get_budget_project_summary(db: Session, budget_project_id, year: int) -> dic
             else:
                 spent_total += override_amount
         else:
-            spent_total += auto_spent_by_month.get(m, 0.0)
-            forecast_month_total += auto_forecast_by_month.get(m, 0.0)
+            amount = auto_by_month.get(m, 0.0)
+            is_fc = month_is_forecast.get(m)
+            if is_fc is None:
+                is_fc = (year > today.year) or (year == today.year and m >= today.month)
+            if is_fc:
+                forecast_month_total += amount
+            else:
+                spent_total += amount
 
     total_forecast = spent_total + forecast_month_total
 

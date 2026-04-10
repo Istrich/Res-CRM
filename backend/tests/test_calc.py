@@ -14,7 +14,14 @@ from datetime import date
 import pytest
 from freezegun import freeze_time
 
-from app.models import AssignmentMonthRate, Employee, SalaryRecord
+from app.models import (
+    AssignmentMonthRate,
+    Employee,
+    SalaryRecord,
+    Staffer,
+    StafferMonthExpense,
+    StaffingExpense,
+)
 from app.services.calc import (
     _month_end,
     _month_start,
@@ -23,6 +30,7 @@ from app.services.calc import (
     employee_active_in_month,
     get_employee_month_total_rate,
     get_project_budget_summary,
+    get_project_monthly_postcalc,
     get_salary_for_month,
     recalculate_year,
 )
@@ -548,6 +556,72 @@ class TestGetProjectBudgetSummary:
         summary = get_project_budget_summary(db, proj.id, 2024)
         assert summary["status"] == "ok"
         assert summary["remaining"] is None
+
+
+class TestVacancyFactInPostcalc:
+    @freeze_time("2024-06-15")
+    def test_vacancy_only_staffing_is_included(self, db, make_budget_project, make_project):
+        bp = make_budget_project(total_budget=2_000_000)
+        proj = make_project(name="VacancyOnly", budget_project=bp)
+
+        db.add(StaffingExpense(project_id=proj.id, year=2024, month=3, fact_amount=50_000))
+        db.commit()
+
+        summary = get_project_budget_summary(db, proj.id, 2024, project=proj)
+        assert summary["spent"] == pytest.approx(50_000.0)
+        assert summary["forecast"] == pytest.approx(50_000.0)
+
+        monthly = get_project_monthly_postcalc(db, proj.id, 2024)
+        mar = next(x for x in monthly if x["month"] == 3)
+        assert mar["amount"] == pytest.approx(50_000.0)
+        assert mar["staffing_amount"] == pytest.approx(50_000.0)
+        assert mar["payroll_amount"] == pytest.approx(0.0)
+
+    @freeze_time("2024-06-15")
+    def test_salary_only_keeps_existing_payroll_logic(self, db, make_budget_project, make_project,
+                                                       make_employee, make_assignment, make_salary):
+        bp = make_budget_project(total_budget=2_000_000)
+        proj = make_project(name="SalaryOnly", budget_project=bp)
+        emp = make_employee()
+        make_assignment(emp, proj, rate=1.0)
+        for m in range(1, 13):
+            make_salary(emp, year=2024, month=m, salary=100_000, kpi=0, fixed=0, one_time=0)
+
+        recalculate_year(db, 2024)
+        summary = get_project_budget_summary(db, proj.id, 2024, project=proj)
+        assert summary["forecast"] == pytest.approx(1_200_000.0)
+
+        monthly = get_project_monthly_postcalc(db, proj.id, 2024)
+        jan = next(x for x in monthly if x["month"] == 1)
+        assert jan["amount"] == pytest.approx(100_000.0)
+        assert jan["payroll_amount"] == pytest.approx(100_000.0)
+        assert jan["staffing_amount"] == pytest.approx(0.0)
+
+    @freeze_time("2024-06-15")
+    def test_mixed_salary_and_staffing_without_staffing_double_count(self, db, make_budget_project,
+                                                                     make_project, make_employee,
+                                                                     make_assignment, make_salary):
+        bp = make_budget_project(total_budget=3_000_000)
+        proj = make_project(name="Mixed", budget_project=bp)
+        emp = make_employee()
+        make_assignment(emp, proj, rate=1.0)
+        for m in range(1, 13):
+            make_salary(emp, year=2024, month=m, salary=100_000, kpi=0, fixed=0, one_time=0)
+        recalculate_year(db, 2024)
+
+        # Same month has both staffing sources: take per-staffer amount, ignore aggregate StaffingExpense.
+        staffer = Staffer(last_name="Contractor", hourly_rate=1500.0, valid_from=date(2024, 1, 1), project_id=proj.id)
+        db.add(staffer)
+        db.flush()
+        db.add(StafferMonthExpense(staffer_id=staffer.id, year=2024, month=3, actual_amount=40_000))
+        db.add(StaffingExpense(project_id=proj.id, year=2024, month=3, fact_amount=90_000))
+        db.commit()
+
+        monthly = get_project_monthly_postcalc(db, proj.id, 2024)
+        mar = next(x for x in monthly if x["month"] == 3)
+        assert mar["payroll_amount"] == pytest.approx(100_000.0)
+        assert mar["staffing_amount"] == pytest.approx(40_000.0)
+        assert mar["amount"] == pytest.approx(140_000.0)
 
 
 # ---------------------------------------------------------------------------

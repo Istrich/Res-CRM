@@ -16,6 +16,7 @@ from app.services.calc import (
     calc_employee_month_cost,
     employee_active_in_month,
     get_budget_project_summary,
+    get_project_monthly_postcalc,
     get_project_budget_summary,
     get_salary_for_month,
 )
@@ -124,13 +125,9 @@ def export_projects_budget(db: Session, year: int) -> io.BytesIO:
         summary = get_project_budget_summary(db, proj.id, year, project=proj)
         fill = ALT_FILL if r % 2 == 0 else None
 
-        from app.models import BudgetSnapshot
         monthly = {
-            s.month: float(s.amount)
-            for s in db.query(BudgetSnapshot).filter(
-                BudgetSnapshot.project_id == proj.id,
-                BudgetSnapshot.year == year,
-            ).all()
+            row["month"]: float(row["amount"])
+            for row in get_project_monthly_postcalc(db, proj.id, year)
         }
 
         budget_val = ""

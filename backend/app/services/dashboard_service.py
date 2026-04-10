@@ -18,6 +18,7 @@ from app.services.calc import (
     batch_employee_month_costs,
     calc_hourly_rate,
     employee_active_in_month,
+    get_project_monthly_postcalc,
     get_working_hours_map,
 )
 
@@ -34,14 +35,10 @@ def get_summary(db: Session, year: int) -> dict:
         if employee_active_in_month(e, today.year, today.month)
     )
 
-    monthly_rows = (
-        db.query(BudgetSnapshot.month, func.sum(BudgetSnapshot.amount))
-        .filter(BudgetSnapshot.year == year)
-        .group_by(BudgetSnapshot.month)
-        .order_by(BudgetSnapshot.month)
-        .all()
-    )
-    monthly_spend = {row[0]: float(row[1]) for row in monthly_rows}
+    monthly_spend = {m: 0.0 for m in range(1, 13)}
+    for project in db.query(Project).all():
+        for row in get_project_monthly_postcalc(db, project.id, year):
+            monthly_spend[row["month"]] += float(row["amount"])
 
     return {
         "year": year,
@@ -84,18 +81,10 @@ def get_by_project_monthly(db: Session, year: int) -> list:
     """Monthly fact totals for each project."""
     projects = db.query(Project).all()
 
-    all_snapshots = (
-        db.query(BudgetSnapshot)
-        .filter(BudgetSnapshot.year == year)
-        .all()
-    )
-    snap_by_proj_month: dict[tuple, float] = {}
-    for s in all_snapshots:
-        snap_by_proj_month[(str(s.project_id), s.month)] = float(s.amount)
-
     result = []
     for proj in projects:
-        monthly_fact = [snap_by_proj_month.get((str(proj.id), m), 0.0) for m in range(1, 13)]
+        postcalc_rows = get_project_monthly_postcalc(db, proj.id, year)
+        monthly_fact = [float(r["amount"]) for r in postcalc_rows]
         total_fact = sum(monthly_fact)
 
         result.append({
@@ -116,15 +105,6 @@ def get_by_budget_project_monthly(db: Session, year: int) -> list:
     bps = db.query(BudgetProject).filter(BudgetProject.year == year).all()
     bp_ids = [bp.id for bp in bps]
 
-    all_snapshots = (
-        db.query(BudgetSnapshot)
-        .filter(BudgetSnapshot.year == year)
-        .all()
-    )
-    snap_by_proj_month: dict[tuple, float] = {}
-    for s in all_snapshots:
-        snap_by_proj_month[(str(s.project_id), s.month)] = float(s.amount)
-
     override_by_bp_month: dict[tuple, float] = {}
     if bp_ids:
         overrides = (
@@ -139,11 +119,24 @@ def get_by_budget_project_monthly(db: Session, year: int) -> list:
             override_by_bp_month[(str(r.budget_project_id), r.month)] = float(r.amount)
 
     result = []
+    project_monthly_fact: dict[str, list[float]] = {}
+    for bp in bps:
+        for p in bp.projects:
+            pid = str(p.id)
+            if pid in project_monthly_fact:
+                continue
+            project_monthly_fact[pid] = [
+                float(r["amount"]) for r in get_project_monthly_postcalc(db, p.id, year)
+            ]
+
     for bp in bps:
         project_ids = [str(p.id) for p in bp.projects]
 
         monthly_fact_auto = [
-            sum(snap_by_proj_month.get((pid, m), 0.0) for pid in project_ids)
+            sum(
+                project_monthly_fact.get(pid, [0.0] * 12)[m - 1]
+                for pid in project_ids
+            )
             for m in range(1, 13)
         ]
         monthly_fact = [

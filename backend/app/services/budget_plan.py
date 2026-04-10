@@ -12,6 +12,7 @@ from app.models import (
     Project,
     ProjectMonthPlan,
 )
+from app.services.calc import get_project_monthly_postcalc
 
 
 def get_budget_project_month_plan(db: Session, budget_project_id, year: int) -> list[dict]:
@@ -100,19 +101,10 @@ def get_budget_project_month_fact(db: Session, budget_project_id, year: int) -> 
     if not project_ids:
         return [{"month": m, "amount": override_by_month.get(m, 0.0)} for m in range(1, 13)]
 
-    # Sum amount per month (all snapshots: fact + forecast) for comparison with plan
-    from sqlalchemy import func
-
-    rows = (
-        db.query(BudgetSnapshot.month, func.sum(BudgetSnapshot.amount).label("total"))
-        .filter(
-            BudgetSnapshot.project_id.in_(project_ids),
-            BudgetSnapshot.year == year,
-        )
-        .group_by(BudgetSnapshot.month)
-        .all()
-    )
-    by_month = {r.month: float(r.total) for r in rows}
+    by_month = {m: 0.0 for m in range(1, 13)}
+    for project_id in project_ids:
+        for row in get_project_monthly_postcalc(db, project_id, year):
+            by_month[row["month"]] += float(row["amount"])
     return [{"month": m, "amount": override_by_month.get(m, by_month.get(m, 0.0))} for m in range(1, 13)]
 
 

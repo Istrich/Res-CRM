@@ -12,6 +12,7 @@ from app.services.budget_plan import (
     get_budget_project_month_plan,
 )
 from app.services.calc import (
+    get_project_monthly_postcalc,
     get_budget_project_summary,
     get_project_budget_summary,
     recalculate_year,
@@ -59,23 +60,7 @@ def project_budget(
 
     summary = get_project_budget_summary(db, project_id, year, project=proj)
 
-    # Monthly breakdown from snapshots
-    snapshots = (
-        db.query(BudgetSnapshot)
-        .filter(BudgetSnapshot.project_id == project_id, BudgetSnapshot.year == year)
-        .order_by(BudgetSnapshot.month)
-        .all()
-    )
-
-    monthly = [
-        {
-            "month": s.month,
-            "amount": float(s.amount),
-            "is_forecast": s.is_forecast,
-            "calculated_at": s.calculated_at,
-        }
-        for s in snapshots
-    ]
+    monthly = get_project_monthly_postcalc(db, project_id, year)
 
     return {
         "project_id": str(project_id),

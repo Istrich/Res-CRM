@@ -240,7 +240,7 @@ export default function BudgetProjectDetailPage() {
           <div>
             <div className="fw-600" style={{ marginBottom: 4 }}>Факт / прогноз по месяцам</div>
             <div className="text-muted text-small" style={{ marginBottom: 0 }}>
-              {factForecastEditMode ? 'Введите значения вручную — они заменят автосчёт.' : 'Значения берутся из расчёта. Можно переключиться на ручной ввод.'}
+              {factForecastEditMode ? 'Введите значения вручную — они заменят автосчёт.' : 'Значения берутся из расчёта (зарплаты + vacancy/staffing факт). Можно переключиться на ручной ввод.'}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

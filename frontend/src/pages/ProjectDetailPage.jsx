@@ -180,7 +180,7 @@ export default function ProjectDetailPage() {
             </table>
           </div>
           <div className="text-small text-muted" style={{ marginTop: 8 }}>
-            Серым — прогноз. Последний расчёт: {budget.last_calculated_at ? new Date(budget.last_calculated_at).toLocaleString('ru-RU') : '—'}
+            Серым — прогноз. В постчете учтены зарплатные и vacancy/staffing расходы. Последний расчёт: {budget.last_calculated_at ? new Date(budget.last_calculated_at).toLocaleString('ru-RU') : '—'}
           </div>
         </div>
       )}

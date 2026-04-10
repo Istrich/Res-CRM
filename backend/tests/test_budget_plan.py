@@ -1,5 +1,6 @@
 """Unit tests for budget_plan service (monthly plan get/set, month fact)."""
 import pytest
+from app.models import StaffingExpense
 
 from app.services.budget_plan import (
     get_budget_project_month_fact,
@@ -96,3 +97,16 @@ class TestBudgetPlanService:
         flags = get_budget_project_month_fact_forecast_override_flags(db, bp.id, 2024)
         assert flags[2]["is_manual"] is True
         assert all(not x["is_manual"] for i, x in enumerate(flags) if i != 2)
+
+    def test_get_budget_project_month_fact_includes_staffing_vacancy_fact(self, db, make_budget_project, make_project):
+        bp = make_budget_project(year=2024)
+        p1 = make_project(name="P1", budget_project=bp)
+        p2 = make_project(name="P2", budget_project=bp)
+
+        db.add(StaffingExpense(project_id=p1.id, year=2024, month=4, fact_amount=200.0))
+        db.add(StaffingExpense(project_id=p2.id, year=2024, month=4, fact_amount=300.0))
+        db.commit()
+
+        fact = get_budget_project_month_fact(db, bp.id, 2024)
+        assert fact[3]["month"] == 4
+        assert fact[3]["amount"] == pytest.approx(500.0)
