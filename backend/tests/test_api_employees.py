@@ -6,6 +6,8 @@ from datetime import date
 
 import pytest
 
+from app.models import AssignmentMonthRate
+
 
 # ---------------------------------------------------------------------------
 # Auth
@@ -245,6 +247,30 @@ class TestEmployeesCRUD:
         assert names == {"Project B", "Project C"}
         for a in data_apr[0]["assignments"]:
             assert a["rate"] == 0.5
+
+    def test_list_uses_month_rate_override_for_selected_month(
+        self, authed_client, db, make_employee, make_project, make_assignment
+    ):
+        emp = make_employee()
+        proj = make_project(name="Project A")
+        asg = make_assignment(emp, proj, rate=0.5, valid_from=date(2025, 1, 1), valid_to=None)
+        db.add(
+            AssignmentMonthRate(
+                assignment_id=asg.id,
+                year=2025,
+                month=4,
+                rate=0.75,
+            )
+        )
+        db.commit()
+
+        r = authed_client.get("/employees", params={"year": 2025, "month": 4})
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+        assert len(data[0]["assignments"]) == 1
+        assert data[0]["assignments"][0]["project_name"] == "Project A"
+        assert data[0]["assignments"][0]["rate"] == 0.75
 
 
 # ---------------------------------------------------------------------------

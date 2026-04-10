@@ -10,7 +10,7 @@ from app.services.import_employees import parse_employee_excel
 from app.config import settings
 from app.database import SessionLocal, get_db
 from app.dependencies import get_current_user
-from app.models import Employee, EmployeeProject, Project, SalaryRecord, User
+from app.models import AssignmentMonthRate, Employee, EmployeeProject, Project, SalaryRecord, User
 from app.utils import escape_like
 from app.schemas.employee import (
     EmployeeCreate,
@@ -81,13 +81,36 @@ def list_employees(
         q = q.join(Employee.employee_projects).filter(EmployeeProject.project_id == project_id)
 
     employees = q.order_by(Employee.last_name, Employee.first_name).all()
+    month_rate_overrides: dict[uuid.UUID, float] | None = None
+    if year is not None and month is not None and employees:
+        assignment_ids = [ep.id for e in employees for ep in e.employee_projects]
+        if assignment_ids:
+            rows = (
+                db.query(AssignmentMonthRate)
+                .filter(
+                    AssignmentMonthRate.assignment_id.in_(assignment_ids),
+                    AssignmentMonthRate.year == year,
+                    AssignmentMonthRate.month == month,
+                )
+                .all()
+            )
+            month_rate_overrides = {r.assignment_id: float(r.rate) for r in rows}
     hours_map = None
     if year:
         # Keep API contract for /employees: when working hours are not configured
         # for the requested year, monthly_hourly_rates should be null.
         loaded_hours = get_working_hours_map(db, year)
         hours_map = loaded_hours if loaded_hours else None
-    return [build_list_item(e, year, month, hours_map=hours_map) for e in employees]
+    return [
+        build_list_item(
+            e,
+            year,
+            month,
+            hours_map=hours_map,
+            month_rate_overrides=month_rate_overrides,
+        )
+        for e in employees
+    ]
 
 
 @router.post("/import")

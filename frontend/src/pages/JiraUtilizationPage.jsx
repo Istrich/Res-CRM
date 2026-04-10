@@ -46,6 +46,9 @@ const CATEGORIES = [
 ]
 
 const STORAGE_KEY = 'jira_util_mapping_v1'
+const MONTHLY_REPORTS_STORAGE_KEY = 'jira_util_monthly_reports_v1'
+const MONTH_NAMES_FULL = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+const MONTHLY_NORM_HINTS = ['<1%', '<2%', '<1%', '<10%', '<1%', '8%-12%', '<3%', '']
 
 function loadMapping() {
   try {
@@ -57,6 +60,20 @@ function loadMapping() {
 
 function saveMapping(mapping) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(mapping)) } catch (_) {}
+}
+
+function loadMonthlyReports() {
+  try {
+    const raw = localStorage.getItem(MONTHLY_REPORTS_STORAGE_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch (_) {
+    return []
+  }
+}
+
+function saveMonthlyReports(reports) {
+  try { localStorage.setItem(MONTHLY_REPORTS_STORAGE_KEY, JSON.stringify(reports)) } catch (_) {}
 }
 
 // ─── Calc helpers ─────────────────────────────────────────────────────────────
@@ -151,6 +168,25 @@ function calcLogs(rows) {
     .map(r => ({ ...r, '% логов без комментариев': r['Кол-во логов'] > 0 ? r1(r['Кол-во логов без комментария'] / r['Кол-во логов'] * 100) : 0 }))
     .filter(r => r['Кол-во логов без комментария'] > 0)
     .sort((a, b) => b['% логов без комментариев'] - a['% логов без комментариев'])
+}
+
+async function parseJiraExportFile(file, issueMap) {
+  const buf = await file.arrayBuffer()
+  const wb = XLSX.read(buf, { type: 'array' })
+  const sheetName = wb.SheetNames.find(n => n.toLowerCase() === 'details') || wb.SheetNames[0]
+  if (!sheetName) throw new Error(`Не найден лист в файле ${file.name}`)
+
+  const ws = wb.Sheets[sheetName]
+  const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '' })
+  if (rawRows.length === 0) throw new Error(`Файл ${file.name} пустой или без строк данных`)
+
+  const firstRow = rawRows[0]
+  const hasUser = 'User' in firstRow || 'Assignee' in firstRow
+  const hasHours = 'Time spent (hours)' in firstRow || 'Hours' in firstRow || 'Time Spent' in firstRow
+  if (!hasUser || !hasHours) {
+    throw new Error(`Файл ${file.name}: не найдены обязательные колонки User/Assignee и Time spent (hours)/Hours`)
+  }
+  return normalizeRows(rawRows, issueMap)
 }
 
 // ─── Excel export ─────────────────────────────────────────────────────────────
@@ -294,6 +330,7 @@ export default function JiraUtilizationPage() {
   const { year } = useYearStore()
   const [mapping, setMapping] = useState(loadMapping)
   const [showMapping, setShowMapping] = useState(false)
+  const [sectionTab, setSectionTab] = useState('weekly')
   const [results, setResults] = useState(null)
   const [filename, setFilename] = useState('')
   const [activeTab, setActiveTab] = useState('employees')
@@ -412,6 +449,42 @@ export default function JiraUtilizationPage() {
 
   const MONTH_NAMES = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
 
+  if (sectionTab === 'monthly') {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <div className="page-title">Утилизация Jira</div>
+            <div className="page-subtitle">Анализ трудозатрат по выгрузке ворклогов · {year}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowMapping(true)}>
+              ⚙️ Маппинг задач ({mapping.length})
+            </button>
+          </div>
+        </div>
+
+        <div className="tabs" style={{ marginBottom: 16 }}>
+          <div className={`tab ${sectionTab === 'weekly' ? 'active' : ''}`} onClick={() => setSectionTab('weekly')}>Недельный анализ</div>
+          <div className={`tab ${sectionTab === 'monthly' ? 'active' : ''}`} onClick={() => setSectionTab('monthly')}>Месячный отчет</div>
+        </div>
+
+        <MonthlyReportTab
+          year={year}
+          mapping={mapping}
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+          workingHoursData={workingHoursData}
+          effectiveNorm={effectiveNorm}
+        />
+
+        {showMapping && (
+          <MappingModal mapping={mapping} onSave={handleSaveMapping} onClose={() => setShowMapping(false)} />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -429,6 +502,11 @@ export default function JiraUtilizationPage() {
             </button>
           )}
         </div>
+      </div>
+
+      <div className="tabs" style={{ marginBottom: 16 }}>
+        <div className={`tab ${sectionTab === 'weekly' ? 'active' : ''}`} onClick={() => setSectionTab('weekly')}>Недельный анализ</div>
+        <div className={`tab ${sectionTab === 'monthly' ? 'active' : ''}`} onClick={() => setSectionTab('monthly')}>Месячный отчет</div>
       </div>
 
       {/* Upload + config card */}
@@ -607,6 +685,445 @@ export default function JiraUtilizationPage() {
       {showMapping && (
         <MappingModal mapping={mapping} onSave={handleSaveMapping} onClose={() => setShowMapping(false)} />
       )}
+    </div>
+  )
+}
+
+function exportMonthlyReport(report) {
+  const weekHeaders = report.weeks.map(w => w.label)
+  const topRows = [
+    ['Недели', ...CATEGORIES, 'Итого'],
+    ...report.weeks.map(w => [w.label, ...CATEGORIES.map(c => w.categoryPct[c] ?? 0), w.totalHours]),
+    ['Итого', ...CATEGORIES.map(c => report.totalCategoryPct[c] ?? 0), ''],
+    ['Норма', ...MONTHLY_NORM_HINTS],
+    [],
+    ['Проект', '% утилизации по проекту'],
+    ['', ...weekHeaders, 'Комментарий'],
+    ...report.projectRows.map(row => [row.project, ...weekHeaders.map((_, i) => row.weeklyPct[i] ?? ''), '']),
+    [],
+    ['Динамика утилизации'],
+    ['Месяц', ...MONTH_NAMES_FULL],
+    ['% Утилизации', ...report.dynamicValues],
+  ]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(topRows), 'Трекинг времени')
+  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+  downloadBlob(
+    new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    `${report.year}-${String(report.month).padStart(2, '0')} — Jira_утилизация_месячный_отчет.xlsx`,
+  )
+}
+
+function enrichEmployeeRow(baseRow, norm) {
+  const raw = { ...baseRow }
+  CATEGORIES.forEach((c) => { raw[c] = Number(raw[c] || 0) })
+  const total = CATEGORIES.reduce((s, c) => s + Number(raw[c] || 0), 0)
+  const work = Number(raw['Рабочие задачи'] || 0)
+  const vac = Number(raw['Отпуск/больничный'] || 0)
+  const markedPct = norm > 0 ? (total / norm) * 100 : 0
+  const utilPct = norm > 0 ? (work / norm) * 100 : 0
+  const parts = []
+  if (utilPct < 75) parts.push(vac > 0 ? 'Был отпуск/больничный' : 'Низкая фактическая утилизация')
+  else if (vac > 0) parts.push('Был отпуск/больничный')
+  if (total < norm - 1) parts.push(`Недоотмечено ${r1(norm - total)} ч`)
+  return {
+    ...raw,
+    Итого: norm,
+    'Всего часов': r2(total),
+    'Отмечено %': r1(markedPct),
+    'Фактическая Утилизация %': r1(utilPct),
+    Отклонения: parts.join('; '),
+  }
+}
+
+function recalcMonthlyFromWeekly(weeklyEmployeeReports, selectedMonth, historyInputs) {
+  const weeks = weeklyEmployeeReports.map((weekData, idx) => {
+    const totalHours = weekData.rows.reduce((s, r) => s + Number(r['Всего часов'] || 0), 0)
+    const byCategory = Object.fromEntries(CATEGORIES.map(c => [c, 0]))
+    weekData.rows.forEach((row) => {
+      CATEGORIES.forEach((c) => { byCategory[c] += Number(row[c] || 0) })
+    })
+    return {
+      week: idx + 1,
+      label: `${idx + 1} неделя`,
+      totalHours: r2(totalHours),
+      categoryPct: Object.fromEntries(CATEGORIES.map(c => [c, totalHours > 0 ? byCategory[c] / totalHours : 0])),
+      employeeCount: weekData.rows.length,
+    }
+  })
+
+  const byEmployee = new Map()
+  const totalNorm = weeklyEmployeeReports.reduce((s, w) => s + Number(w.norm || 0), 0)
+  weeklyEmployeeReports.forEach((weekData) => {
+    weekData.rows.forEach((row) => {
+      const key = String(row.Сотрудник || '').trim()
+      if (!key) return
+      if (!byEmployee.has(key)) {
+        const seed = { Сотрудник: key }
+        CATEGORIES.forEach((c) => { seed[c] = 0 })
+        byEmployee.set(key, seed)
+      }
+      const rec = byEmployee.get(key)
+      CATEGORIES.forEach((c) => { rec[c] += Number(row[c] || 0) })
+    })
+  })
+  const monthlyEmpRows = Array.from(byEmployee.values())
+    .map((r) => enrichEmployeeRow(r, totalNorm))
+    .sort((a, b) => a.Сотрудник.localeCompare(b.Сотрудник, 'ru'))
+  const avgUtil = monthlyEmpRows.length
+    ? r1(monthlyEmpRows.reduce((s, r) => s + Number(r['Фактическая Утилизация %'] || 0), 0) / monthlyEmpRows.length)
+    : 0
+
+  const monthTotalHours = weeks.reduce((s, w) => s + w.totalHours, 0)
+  const totalCategoryPct = Object.fromEntries(CATEGORIES.map(c => [c, 0]))
+  weeks.forEach((w) => {
+    const weight = monthTotalHours > 0 ? w.totalHours / monthTotalHours : 0
+    CATEGORIES.forEach((c) => { totalCategoryPct[c] += (w.categoryPct[c] || 0) * weight })
+  })
+
+  const dynamicValues = Array.from({ length: 12 }, (_, i) => {
+    const month = i + 1
+    if (month === selectedMonth) return avgUtil
+    const val = Number(String(historyInputs[month] || '').replace(',', '.'))
+    return Number.isFinite(val) ? val : ''
+  })
+
+  return {
+    avgUtil,
+    weeks,
+    totalNorm,
+    totalCategoryPct,
+    dynamicValues,
+    monthlyEmpRows,
+    projectRows: [],
+  }
+}
+
+function MonthlyReportTab({ year, mapping, selectedMonth, setSelectedMonth, workingHoursData, effectiveNorm }) {
+  const [weekFiles, setWeekFiles] = useState([null, null, null, null, null])
+  const [weekNorms, setWeekNorms] = useState([40, 40, 40, 40, 40])
+  const [historyInputs, setHistoryInputs] = useState(() =>
+    Object.fromEntries(Array.from({ length: 12 }, (_, i) => [i + 1, ''])),
+  )
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [savedReports, setSavedReports] = useState(loadMonthlyReports)
+  const [activeReport, setActiveReport] = useState(null)
+  const [activeWeek, setActiveWeek] = useState(0)
+
+  const monthNorm = workingHoursData?.items?.find(it => it.month === selectedMonth)?.hours ?? effectiveNorm
+  const weekRequiredReady = weekFiles.slice(0, 4).every(Boolean)
+  const hasWeek5 = Boolean(weekFiles[4])
+
+  const updateWeekFile = (idx, file) => {
+    setWeekFiles(prev => prev.map((it, i) => (i === idx ? file || null : it)))
+  }
+  const updateWeekNorm = (idx, value) => {
+    const n = Number(String(value).replace(',', '.'))
+    setWeekNorms(prev => prev.map((it, i) => (i === idx ? (Number.isFinite(n) && n > 0 ? n : 0) : it)))
+  }
+
+  const setHistoryValue = (month, value) => {
+    setHistoryInputs(prev => ({ ...prev, [month]: value }))
+  }
+
+  const removeReport = (id) => {
+    const next = savedReports.filter(r => r.id !== id)
+    setSavedReports(next)
+    saveMonthlyReports(next)
+    if (activeReport?.id === id) setActiveReport(null)
+  }
+
+  const upsertReport = (updated) => {
+    const next = savedReports.map(r => (r.id === updated.id ? updated : r))
+    setSavedReports(next)
+    setActiveReport(updated)
+    saveMonthlyReports(next)
+  }
+
+  const buildMonthlyReport = async () => {
+    if (!weekRequiredReady) {
+      setError('Нужно загрузить минимум 4 недельных файла (1-4 недели).')
+      return
+    }
+    setLoading(true)
+    setError('')
+    try {
+      const issueMap = buildIssueMap(mapping)
+      const activeWeeks = weekFiles
+        .map((file, i) => ({ file, idx: i }))
+        .filter(w => Boolean(w.file) && (w.idx < 4 || hasWeek5))
+
+      const weeklyNormalized = []
+      for (const w of activeWeeks) {
+        const normalized = await parseJiraExportFile(w.file, issueMap)
+        weeklyNormalized.push({ week: w.idx + 1, normalized })
+      }
+
+      const weeklyEmployeeReports = weeklyNormalized.map(({ normalized }, idx) => ({
+        week: idx + 1,
+        norm: Number(weekNorms[idx] || 0),
+        rows: calcEmployees(normalized, Number(weekNorms[idx] || 0)),
+      }))
+      const computed = recalcMonthlyFromWeekly(weeklyEmployeeReports, selectedMonth, historyInputs)
+
+      const report = {
+        id: `jira-monthly-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        year,
+        month: selectedMonth,
+        monthName: MONTH_NAMES_FULL[selectedMonth - 1],
+        monthNorm: computed.totalNorm,
+        avgUtil: computed.avgUtil,
+        weeks: computed.weeks,
+        totalCategoryPct: computed.totalCategoryPct,
+        projectRows: computed.projectRows,
+        dynamicValues: computed.dynamicValues,
+        weeklyEmployeeReports,
+      }
+
+      const next = [report, ...savedReports]
+      setSavedReports(next)
+      saveMonthlyReports(next)
+      setActiveReport(report)
+      setActiveWeek(0)
+    } catch (e) {
+      setError(e.message || 'Не удалось сформировать месячный отчет')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div>
+      <div className="card" style={{ padding: '16px 20px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="label">Месяц отчета</label>
+            <select className="select" value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))}>
+              {MONTH_NAMES_FULL.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="label">Суммарная норма (авто)</label>
+            <input
+              className="input"
+              disabled
+              value={weekNorms.reduce((s, n, i) => s + (weekFiles[i] ? Number(n || 0) : 0), 0)}
+              style={{ width: 160 }}
+            />
+          </div>
+          <button type="button" className="btn btn-primary" onClick={buildMonthlyReport} disabled={loading || !weekRequiredReady}>
+            {loading ? 'Формирование...' : 'Сформировать отчет'}
+          </button>
+        </div>
+
+        <div className="grid-4" style={{ gap: 12, marginBottom: 12 }}>
+          {[1, 2, 3, 4, 5].map((week) => (
+            <div key={week} className="form-group" style={{ margin: 0 }}>
+              <label className="label">Неделя {week}{week === 5 ? ' (опц.)' : ''}</label>
+              <input
+                type="file"
+                className="input"
+                accept=".xlsx,.xls"
+                onChange={e => updateWeekFile(week - 1, e.target.files?.[0])}
+              />
+              <div className="text-small text-muted" style={{ marginTop: 4 }}>
+                {weekFiles[week - 1]?.name || 'Файл не выбран'}
+              </div>
+              <input
+                type="number"
+                className="input"
+                min={1}
+                step={1}
+                value={weekNorms[week - 1]}
+                onChange={e => updateWeekNorm(week - 1, e.target.value)}
+                style={{ marginTop: 6 }}
+              />
+              <div className="text-small text-muted" style={{ marginTop: 2 }}>Норма часов за неделю</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="fw-600" style={{ marginBottom: 8 }}>Динамика утилизации (предыдущие месяцы)</div>
+        <div className="grid-4" style={{ gap: 10 }}>
+          {MONTH_NAMES_FULL.map((m, i) => {
+            const month = i + 1
+            const isCurrent = month === selectedMonth
+            return (
+              <div key={m} className="form-group" style={{ margin: 0 }}>
+                <label className="label">{m}</label>
+                <input
+                  type="number"
+                  className="input"
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  placeholder={isCurrent ? 'Авто из отчета' : '0-100'}
+                  disabled={isCurrent}
+                  value={isCurrent ? '' : historyInputs[month]}
+                  onChange={e => setHistoryValue(month, e.target.value)}
+                />
+              </div>
+            )
+          })}
+        </div>
+
+        {error && <div className="alert alert-error" style={{ marginTop: 12, marginBottom: 0 }}>{error}</div>}
+      </div>
+
+      {activeReport && (
+        <div className="card" style={{ padding: '16px 20px', marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div className="fw-600">{activeReport.monthName} {activeReport.year} · средняя утилизация {activeReport.avgUtil}%</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  const computed = recalcMonthlyFromWeekly(activeReport.weeklyEmployeeReports || [], activeReport.month, historyInputs)
+                  const updated = {
+                    ...activeReport,
+                    monthNorm: computed.totalNorm,
+                    avgUtil: computed.avgUtil,
+                    weeks: computed.weeks,
+                    totalCategoryPct: computed.totalCategoryPct,
+                    dynamicValues: computed.dynamicValues,
+                    projectRows: computed.projectRows,
+                    updatedAt: new Date().toISOString(),
+                  }
+                  upsertReport(updated)
+                }}
+              >
+                Сохранить изменения
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => exportMonthlyReport(activeReport)}>⬇ Excel</button>
+            </div>
+          </div>
+          <div className="text-small text-muted">
+            Сформировано недель: {activeReport.weeks.length} · суммарная норма {activeReport.monthNorm} ч.
+          </div>
+        </div>
+      )}
+
+      {activeReport?.weeklyEmployeeReports?.length > 0 && (
+        <div className="card" style={{ padding: '16px 20px', marginBottom: 20 }}>
+          <div className="fw-600" style={{ marginBottom: 10 }}>Недельные отчеты (редактирование)</div>
+          <div className="tabs" style={{ marginBottom: 12 }}>
+            {activeReport.weeklyEmployeeReports.map((w, idx) => (
+              <div key={w.week} className={`tab ${activeWeek === idx ? 'active' : ''}`} onClick={() => setActiveWeek(idx)}>
+                {w.week} неделя
+              </div>
+            ))}
+          </div>
+          <WeeklyEmployeesEditor
+            weekData={activeReport.weeklyEmployeeReports[activeWeek]}
+            onChange={(updatedWeek) => {
+              const nextWeeks = (activeReport.weeklyEmployeeReports || []).map((w, i) => (i === activeWeek ? updatedWeek : w))
+              const computed = recalcMonthlyFromWeekly(nextWeeks, activeReport.month, historyInputs)
+              setActiveReport({
+                ...activeReport,
+                weeklyEmployeeReports: nextWeeks,
+                monthNorm: computed.totalNorm,
+                avgUtil: computed.avgUtil,
+                weeks: computed.weeks,
+                totalCategoryPct: computed.totalCategoryPct,
+                dynamicValues: computed.dynamicValues,
+                projectRows: computed.projectRows,
+              })
+            }}
+          />
+          <div className="text-small text-muted" style={{ marginTop: 8 }}>
+            Изменения в неделях влияют на месячный итог. Нажмите `Сохранить изменения`, чтобы зафиксировать в истории.
+          </div>
+        </div>
+      )}
+
+      <div className="card" style={{ padding: '16px 20px' }}>
+        <div className="fw-600" style={{ marginBottom: 10 }}>Сохраненные отчеты</div>
+        {!savedReports.length && <div className="text-muted text-small">Пока нет сохраненных отчетов.</div>}
+        {savedReports.map((r) => (
+          <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+            <div>
+              <div className="fw-500">{r.monthName} {r.year}</div>
+              <div className="text-muted text-small">Создан: {new Date(r.createdAt).toLocaleString('ru-RU')} · {r.weeks.length} нед.</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActiveReport(r)}>Открыть</button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => exportMonthlyReport(r)}>Excel</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeReport(r.id)}>Удалить</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function WeeklyEmployeesEditor({ weekData, onChange }) {
+  if (!weekData) return null
+  const weekNorm = Number(weekData.norm || 0)
+  const updateValue = (rowIndex, field, value) => {
+    const safe = Number(String(value).replace(',', '.'))
+    const nextRows = weekData.rows.map((row, idx) => {
+      if (idx !== rowIndex) return row
+      return enrichEmployeeRow({ ...row, [field]: Number.isFinite(safe) && safe >= 0 ? safe : 0 }, weekNorm)
+    })
+    onChange({ ...weekData, rows: nextRows })
+  }
+  const updateWeekNorm = (value) => {
+    const n = Number(String(value).replace(',', '.'))
+    const nextNorm = Number.isFinite(n) && n > 0 ? n : 0
+    const nextRows = weekData.rows.map((row) => enrichEmployeeRow(row, nextNorm))
+    onChange({ ...weekData, norm: nextNorm, rows: nextRows })
+  }
+  const removeEmployee = (rowIndex) => {
+    onChange({ ...weekData, rows: weekData.rows.filter((_, idx) => idx !== rowIndex) })
+  }
+  return (
+    <div>
+      <div className="form-group" style={{ marginBottom: 10, width: 180 }}>
+        <label className="label">Норма недели (часы)</label>
+        <input type="number" min={1} step={1} className="input" value={weekNorm} onChange={(e) => updateWeekNorm(e.target.value)} />
+      </div>
+      <div className="overflow-table">
+      <table>
+        <thead>
+          <tr>
+            <th className="th" style={{ minWidth: 180 }}>Сотрудник</th>
+            {CATEGORIES.map((c) => <th key={c} className="th" style={{ minWidth: 100, fontSize: 11 }}>{c}</th>)}
+            <th className="th">Всего часов</th>
+            <th className="th">Утилизация %</th>
+            <th className="th" />
+          </tr>
+        </thead>
+        <tbody>
+          {weekData.rows.map((row, rowIndex) => (
+            <tr key={`${row.Сотрудник}-${rowIndex}`}>
+              <td className="td fw-500">{row.Сотрудник}</td>
+              {CATEGORIES.map((c) => (
+                <td key={c} className="td">
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    className="input"
+                    value={row[c] ?? 0}
+                    onChange={(e) => updateValue(rowIndex, c, e.target.value)}
+                    style={{ width: 90, padding: '4px 6px', fontSize: 12 }}
+                  />
+                </td>
+              ))}
+              <td className="td text-right">{row['Всего часов']}</td>
+              <td className="td text-right"><UtilPct pct={row['Фактическая Утилизация %']} /></td>
+              <td className="td">
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeEmployee(rowIndex)}>Удалить</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
     </div>
   )
 }
