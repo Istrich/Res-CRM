@@ -50,12 +50,16 @@ def check_assignment_period_within_employment(
             )
 
 
-def build_assignment_out(ep: EmployeeProject, monthly_rates: list[float] | None = None) -> AssignmentOut:
+def build_assignment_out(
+    ep: EmployeeProject,
+    monthly_rates: list[float] | None = None,
+    rate_override: float | None = None,
+) -> AssignmentOut:
     return AssignmentOut(
         id=ep.id,
         project_id=ep.project_id,
         project_name=ep.project.name if ep.project else "",
-        rate=float(ep.rate),
+        rate=float(rate_override) if rate_override is not None else float(ep.rate),
         valid_from=ep.valid_from,
         valid_to=ep.valid_to,
         monthly_rates=monthly_rates,
@@ -145,10 +149,17 @@ def build_list_item(
     year: Optional[int] = None,
     month: Optional[int] = None,
     hours_map: Optional[dict] = None,
+    month_rate_overrides: Optional[dict[uuid.UUID, float]] = None,
 ) -> EmployeeListItem:
     if year is not None and month is not None and 1 <= month <= 12:
         active = [ep for ep in emp.employee_projects if assignment_active_in_month(ep, year, month)]
-        assignments = [build_assignment_out(ep) for ep in active]
+        assignments = [
+            build_assignment_out(
+                ep,
+                rate_override=month_rate_overrides.get(ep.id) if month_rate_overrides else None,
+            )
+            for ep in active
+        ]
         has_projects = len(active) > 0
     else:
         assignments = [build_assignment_out(ep) for ep in emp.employee_projects]
